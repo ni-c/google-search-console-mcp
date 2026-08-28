@@ -1,0 +1,9 @@
+{
+  "$comment": "Copy for docs/public/og.png, the GitHub social preview and the OpenGraph card. Rendered by scripts/gen-assets.mjs. Tagline and badges are split by hand because the renderer does not wrap text.",
+  "title": "google-search-console-mcp",
+  "tagline": [
+    "Create and verify properties, submit sitemaps,",
+    "query search analytics and inspect URLs"
+  ],
+  "badges": ["21 tools", "MIT", "Node ≥22"]
+}

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ni-c/google-search-console-mcp",
+  "title": "Google Search Console",
+  "description": "MCP server for Google Search Console: properties, sitemaps, search analytics and URL inspection",
+  "websiteUrl": "https://google-search-console-mcp.ni-c.de",
+  "repository": {
+    "url": "https://github.com/ni-c/google-search-console-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "google-search-console-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GSC_SERVICE_ACCOUNT_KEY",
+          "description": "Service account key as JSON, or base64-encoded JSON. One of the three credential options.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GSC_SERVICE_ACCOUNT_KEY_FILE",
+          "description": "Path to a service account key file. Alternative to GSC_SERVICE_ACCOUNT_KEY.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_CLIENT_ID",
+          "description": "OAuth2 client id. Use together with GSC_CLIENT_SECRET and GSC_REFRESH_TOKEN.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_CLIENT_SECRET",
+          "description": "OAuth2 client secret. All three OAuth2 variables are required together.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GSC_REFRESH_TOKEN",
+          "description": "OAuth2 refresh token. All three OAuth2 variables are required together.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Path to application default credentials, used when no GSC_ credential is set.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_SITE_URL",
+          "description": "Default property, e.g. sc-domain:example.com or https://example.com/ \u2014 makes site_url optional",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_ALLOWED_SITES",
+          "description": "Comma-separated properties this server may touch; anything else is refused",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_READ_ONLY",
+          "description": "Set to true to register only the read tools (default: false)",
+          "isRequired": false,
+          "format": "boolean"
+        },
+        {
+          "name": "GSC_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever the allow list left",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/ni-c/google-search-console-mcp:0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GSC_SERVICE_ACCOUNT_KEY",
+          "description": "Service account key as JSON, or base64-encoded JSON. One of the three credential options.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GSC_SERVICE_ACCOUNT_KEY_FILE",
+          "description": "Path to a service account key file. Alternative to GSC_SERVICE_ACCOUNT_KEY.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_CLIENT_ID",
+          "description": "OAuth2 client id. Use together with GSC_CLIENT_SECRET and GSC_REFRESH_TOKEN.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_CLIENT_SECRET",
+          "description": "OAuth2 client secret. All three OAuth2 variables are required together.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GSC_REFRESH_TOKEN",
+          "description": "OAuth2 refresh token. All three OAuth2 variables are required together.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Path to application default credentials, used when no GSC_ credential is set.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_SITE_URL",
+          "description": "Default property, e.g. sc-domain:example.com or https://example.com/ \u2014 makes site_url optional",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_ALLOWED_SITES",
+          "description": "Comma-separated properties this server may touch; anything else is refused",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_READ_ONLY",
+          "description": "Set to true to register only the read tools (default: false)",
+          "isRequired": false,
+          "format": "boolean"
+        },
+        {
+          "name": "GSC_ALLOW_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to register; 'essential' selects a curated preset (default: all tools)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "GSC_DENY_TOOLS",
+          "description": "Comma-separated tool names or list_* prefixes to remove from whatever the allow list left",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

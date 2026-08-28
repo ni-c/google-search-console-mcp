@@ -1,0 +1,28 @@
+name: Feature request
+description: A tool or capability the server should have
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation or workflow, not yet the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should the server be able to do?
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: 'Google API method (if you know it)'
+      description: >-
+        The method from the Search Console, Site Verification or Indexing API —
+        a link to Google's reference makes this much faster.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you considered

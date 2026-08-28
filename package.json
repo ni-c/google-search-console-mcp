@@ -1,0 +1,69 @@
+{
+  "name": "google-search-console-mcp",
+  "version": "0.1.0",
+  "mcpName": "io.github.ni-c/google-search-console-mcp",
+  "description": "MCP server for Google Search Console: manage properties and sitemaps, query search analytics, inspect URLs",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-search-console",
+    "search-console",
+    "seo",
+    "sitemap",
+    "site-verification",
+    "indexing-api"
+  ],
+  "license": "MIT",
+  "author": "Willi Thiel",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ni-c/google-search-console-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ni-c/google-search-console-mcp/issues"
+  },
+  "homepage": "https://google-search-console-mcp.ni-c.de",
+  "funding": "https://github.com/sponsors/ni-c",
+  "type": "module",
+  "bin": {
+    "google-search-console-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "!dist/**/*.map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run lint && npm test && npm run build",
+    "assets": "node scripts/gen-assets.mjs",
+    "assets:check": "node scripts/gen-assets.mjs --check"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "google-auth-library": "^11.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^26.4.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "eslint": "^10.9.1",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}

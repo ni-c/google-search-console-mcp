@@ -1,0 +1,104 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+
+import { budgetedJsonResult, run, textResult } from '../result.js';
+import { webUrl } from '../schema.js';
+import type { ToolContext } from './context.js';
+
+/**
+ * What the Indexing API is actually for, said in every description that touches
+ * it.
+ *
+ * Google's documentation is unambiguous and widely ignored: the API accepts a
+ * notification for any URL the credential owns, and only *acts* on pages
+ * carrying JobPosting or BroadcastEvent structured data. For an ordinary page it
+ * returns 200 with a timestamp and does nothing at all. That success is the
+ * problem — an SEO tool that reports "submitted for indexing" and produced no
+ * effect is worse than one that refuses, so this says so up front rather than
+ * letting a green result imply something it does not mean.
+ */
+const SCOPE_WARNING =
+  'Google only acts on this for pages with JobPosting or BroadcastEvent ' +
+  'structured data. For any other page the call succeeds, returns a timestamp, ' +
+  'and changes nothing — it is not a way to get a normal page crawled sooner. ' +
+  'Submit a sitemap for that.';
+
+const OWNERSHIP_NOTE =
+  'The credential must be a verified *owner* of the property — Search Console ' +
+  'user access is not enough, and the API answers 403 without saying which of ' +
+  'the two is missing.';
+
+export function registerIndexingTools(
+  server: McpServer,
+  { api, readOnly }: ToolContext
+): void {
+  server.registerTool(
+    'get_indexing_status',
+    {
+      title: 'Get Indexing API status for a URL',
+      description:
+        'Returns when this credential last notified Google about a URL through ' +
+        'the Indexing API, and what kind of notification it was. This reports ' +
+        'the notification history only — it says nothing about whether the page ' +
+        'is indexed. inspect_url answers that. ' +
+        OWNERSHIP_NOTE,
+      inputSchema: {
+        url: webUrl.describe('The URL to look up the notification history for'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ url }) =>
+      run(async () =>
+        budgetedJsonResult(
+          await api.get('indexing', '/v3/urlNotifications/metadata', {
+            query: { url },
+          })
+        )
+      )
+  );
+
+  if (readOnly) return;
+
+  server.registerTool(
+    'request_indexing',
+    {
+      title: 'Notify Google that a URL changed',
+      description:
+        'Tells Google through the Indexing API that a URL was updated or ' +
+        'removed.\n\n' +
+        SCOPE_WARNING +
+        '\n\n' +
+        OWNERSHIP_NOTE +
+        ' The default quota is 200 URLs per day per project.',
+      inputSchema: {
+        url: webUrl.describe('The URL that changed'),
+        type: z
+          .enum(['URL_UPDATED', 'URL_DELETED'])
+          .optional()
+          .describe(
+            'URL_UPDATED (default) for a new or changed page, URL_DELETED for ' +
+              'one that has been removed. URL_DELETED requires that the page ' +
+              'actually returns 404 or 410 — Google checks.'
+          ),
+      },
+      annotations: { idempotentHint: true },
+    },
+    ({ url, type }) =>
+      run(async () => {
+        const result = await api.post(
+          'indexing',
+          '/v3/urlNotifications:publish',
+          {
+            url,
+            type: type ?? 'URL_UPDATED',
+          }
+        );
+        return textResult(
+          `Notification accepted for ${url} (${type ?? 'URL_UPDATED'}).\n\n` +
+            `${JSON.stringify(result, null, 2)}\n\n` +
+            'Accepted is not acted upon. ' +
+            SCOPE_WARNING
+        );
+      })
+  );
+}
