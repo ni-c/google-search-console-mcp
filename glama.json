@@ -1,1 +1,4 @@
-{ "maintainers": ["ni-c"] }
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["ni-c"]
+}
