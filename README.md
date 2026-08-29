@@ -1,10 +1,10 @@
 # google-search-console-mcp
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/google-search-console-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/google-search-console-mcp/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/google-search-console-mcp)](https://www.npmjs.com/package/google-search-console-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/google-search-console-mcp)](https://www.npmjs.com/package/google-search-console-mcp)
-[![node](https://img.shields.io/node/v/google-search-console-mcp)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/google-search-console-mcp)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/%40ni-c%2Fgoogle-search-console-mcp)](https://www.npmjs.com/package/@ni-c/google-search-console-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/%40ni-c%2Fgoogle-search-console-mcp)](https://www.npmjs.com/package/@ni-c/google-search-console-mcp)
+[![node](https://img.shields.io/node/v/%40ni-c%2Fgoogle-search-console-mcp)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/%40ni-c%2Fgoogle-search-console-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fgoogle--search--console--mcp-blue)](https://github.com/ni-c/google-search-console-mcp/pkgs/container/google-search-console-mcp)
 [![docs](https://img.shields.io/badge/docs-google--search--console--mcp.ni--c.de-informational)](https://google-search-console-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
@@ -142,7 +142,7 @@ denied the Indexing tools never asks for the Indexing scope.
 ### Claude Code
 
 ```sh
-claude mcp add google-search-console -- npx -y google-search-console-mcp
+claude mcp add google-search-console -- npx -y @ni-c/google-search-console-mcp
 ```
 
 ### Claude Desktop
@@ -152,7 +152,7 @@ claude mcp add google-search-console -- npx -y google-search-console-mcp
   "mcpServers": {
     "google-search-console": {
       "command": "npx",
-      "args": ["-y", "google-search-console-mcp"],
+      "args": ["-y", "@ni-c/google-search-console-mcp"],
       "env": {
         "GSC_SERVICE_ACCOUNT_KEY_FILE": "/path/to/key.json",
         "GSC_SITE_URL": "sc-domain:example.com"
@@ -167,7 +167,7 @@ claude mcp add google-search-console -- npx -y google-search-console-mcp
 ```toml
 [mcp_servers.google-search-console]
 command = "npx"
-args = ["-y", "google-search-console-mcp"]
+args = ["-y", "@ni-c/google-search-console-mcp"]
 
 [mcp_servers.google-search-console.env]
 GSC_SERVICE_ACCOUNT_KEY_FILE = "/path/to/key.json"

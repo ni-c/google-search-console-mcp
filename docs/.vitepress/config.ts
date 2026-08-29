@@ -46,7 +46,7 @@ export default defineConfig({
         items: [
           { text: 'Changelog', link: '/reference/changelog' },
           { text: 'Releases', link: 'https://github.com/ni-c/google-search-console-mcp/releases' },
-          { text: 'npm package', link: 'https://www.npmjs.com/package/google-search-console-mcp' },
+          { text: 'npm package', link: 'https://www.npmjs.com/package/@ni-c/google-search-console-mcp' },
         ],
       },
     ],

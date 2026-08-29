@@ -95,6 +95,12 @@ pushed.
 
 ### Notes
 
+- The npm package is **`@ni-c/google-search-console-mcp`**, scoped, while the
+  repository, the image and the docs domain are unscoped. `npm view` reported the
+  unscoped name as free, but npm's similarity check runs only at publish time and
+  refused it as too close to the existing `google-searchconsole-mcp`. The MCP
+  registry name is unaffected — that is `io.github.ni-c/google-search-console-mcp`
+  either way.
 - There is no `hosts.ts` SSRF guard here, unlike its sibling servers, and that is
   a decision rather than an omission: there is no configurable target host. Every
   request goes to one of three hard-coded Google endpoints.

@@ -54,7 +54,7 @@ is refused rather than resolved to one of them.
 ## Run it
 
 ```sh
-npx -y google-search-console-mcp
+npx -y @ni-c/google-search-console-mcp
 ```
 
 It starts even with no credential at all and lists its tools; every call then

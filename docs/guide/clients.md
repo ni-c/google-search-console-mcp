@@ -6,7 +6,7 @@
 claude mcp add google-search-console \
   -e GSC_SERVICE_ACCOUNT_KEY_FILE=/path/to/key.json \
   -e GSC_SITE_URL=sc-domain:example.com \
-  -- npx -y google-search-console-mcp
+  -- npx -y @ni-c/google-search-console-mcp
 ```
 
 ## Claude Desktop
@@ -18,7 +18,7 @@ In `claude_desktop_config.json`:
   "mcpServers": {
     "google-search-console": {
       "command": "npx",
-      "args": ["-y", "google-search-console-mcp"],
+      "args": ["-y", "@ni-c/google-search-console-mcp"],
       "env": {
         "GSC_SERVICE_ACCOUNT_KEY_FILE": "/path/to/key.json",
         "GSC_SITE_URL": "sc-domain:example.com"
@@ -39,7 +39,7 @@ In `~/.codex/config.toml`:
 ```toml
 [mcp_servers.google-search-console]
 command = "npx"
-args = ["-y", "google-search-console-mcp"]
+args = ["-y", "@ni-c/google-search-console-mcp"]
 
 [mcp_servers.google-search-console.env]
 GSC_SERVICE_ACCOUNT_KEY_FILE = "/path/to/key.json"
@@ -53,7 +53,7 @@ For trying tools out by hand:
 ```sh
 GSC_SERVICE_ACCOUNT_KEY_FILE=/path/to/key.json \
 GSC_READ_ONLY=true \
-  npx @modelcontextprotocol/inspector npx -y google-search-console-mcp
+  npx @modelcontextprotocol/inspector npx -y @ni-c/google-search-console-mcp
 ```
 
 `GSC_READ_ONLY=true` is worth having here. The Inspector makes it very easy to
@@ -88,7 +88,7 @@ cannot spawn a local process.
   "mcpServers": {
     "google-search-console": {
       "command": "npx",
-      "args": ["-y", "google-search-console-mcp"],
+      "args": ["-y", "@ni-c/google-search-console-mcp"],
       "env": {
         "GSC_SERVICE_ACCOUNT_KEY": "…",
         "GSC_SITE_URL": "sc-domain:example.com"
