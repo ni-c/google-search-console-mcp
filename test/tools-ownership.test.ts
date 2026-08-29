@@ -113,14 +113,86 @@ describe('update_site_owners', () => {
         }),
       },
     });
-    await call(await connect(), 'update_site_owners', {
+    const client = await connect();
+    const args = {
       id: 'dns://example.com',
       owners: ['a@example.com', 'b@example.com'],
+    };
+    const first = await call(client, 'update_site_owners', args);
+    await call(client, 'update_site_owners', {
+      ...args,
+      confirm_token: tokenOf(first),
     });
-    expect(stub.calls[1]?.body).toMatchObject({
+
+    const put = stub.calls.find((entry) => entry.method === 'PUT');
+    expect(put?.body).toMatchObject({
       site: { type: 'INET_DOMAIN', identifier: 'example.com' },
       owners: ['a@example.com', 'b@example.com'],
     });
+  });
+
+  it('is two-step, because the list it takes is the list that survives', async () => {
+    /*
+     * The tool reads like an update and behaves like a replacement: one
+     * well-formed call with the wrong list removes every other owner, and
+     * nothing here can put them back. `min(1)` stops the empty-list wipe and
+     * nothing else — ["attacker@evil.test"] is the same operation.
+     */
+    const stub = stubFetch({
+      [`GET ${RESOURCES}/dns%3A%2F%2Fexample.com`]: {
+        json: verificationResource(),
+      },
+      [`PUT ${RESOURCES}/dns%3A%2F%2Fexample.com`]: {
+        json: verificationResource(),
+      },
+    });
+    const client = await connect();
+    const args = { id: 'dns://example.com', owners: ['a@example.com'] };
+
+    const first = await call(client, 'update_site_owners', args);
+    expect(stub.calls.some((entry) => entry.method === 'PUT')).toBe(false);
+    expect(textOf(first)).toContain('replace the entire owner list');
+    // The property, derived by this server, not the opaque id it was handed.
+    expect(textOf(first)).toContain('sc-domain:example.com');
+
+    await call(client, 'update_site_owners', {
+      ...args,
+      confirm_token: tokenOf(first),
+    });
+    expect(stub.calls.some((entry) => entry.method === 'PUT')).toBe(true);
+  });
+
+  it('binds the token to the owner list, whatever order it arrives in', async () => {
+    stubFetch({
+      [`GET ${RESOURCES}/dns%3A%2F%2Fexample.com`]: {
+        json: verificationResource(),
+      },
+      [`PUT ${RESOURCES}/dns%3A%2F%2Fexample.com`]: {
+        json: verificationResource(),
+      },
+    });
+    const client = await connect();
+    const first = await call(client, 'update_site_owners', {
+      id: 'dns://example.com',
+      owners: ['a@example.com', 'b@example.com'],
+    });
+    const token = tokenOf(first);
+
+    // A confirmation for two owners must not execute a list with a third.
+    const widened = await call(client, 'update_site_owners', {
+      id: 'dns://example.com',
+      owners: ['a@example.com', 'b@example.com', 'attacker@evil.test'],
+      confirm_token: token,
+    });
+    expect(widened.isError).toBe(true);
+
+    // The same set in another order is the same operation, though.
+    const reordered = await call(client, 'update_site_owners', {
+      id: 'dns://example.com',
+      owners: ['b@example.com', 'a@example.com'],
+      confirm_token: token,
+    });
+    expect(reordered.isError).toBeFalsy();
   });
 
   it('uses PATCH when asked', async () => {
@@ -134,12 +206,18 @@ describe('update_site_owners', () => {
         json: verificationResource(),
       },
     });
-    await call(await connect(), 'update_site_owners', {
+    const client = await connect();
+    const args = {
       id: 'dns://example.com',
       owners: ['a@example.com'],
       method: 'patch',
+    };
+    const first = await call(client, 'update_site_owners', args);
+    await call(client, 'update_site_owners', {
+      ...args,
+      confirm_token: tokenOf(first),
     });
-    expect(stub.calls[1]?.method).toBe('PATCH');
+    expect(stub.calls.some((entry) => entry.method === 'PATCH')).toBe(true);
   });
 
   it('refuses an empty owner list', async () => {
@@ -157,22 +235,41 @@ describe('update_site_owners', () => {
 describe('unverify_site', () => {
   it('is two-step and spells out what ownership loss costs', async () => {
     const stub = stubFetch({
+      [`GET ${RESOURCES}/dns%3A%2F%2Fexample.com`]: {
+        json: verificationResource(),
+      },
       [`DELETE ${RESOURCES}/dns%3A%2F%2Fexample.com`]: { status: 204 },
     });
     const client = await connect();
+    const deletes = (): number =>
+      stub.calls.filter((entry) => entry.method === 'DELETE').length;
 
     const first = await call(client, 'unverify_site', {
       id: 'dns://example.com',
     });
-    expect(stub.calls).toHaveLength(0);
+    expect(deletes()).toBe(0);
     expect(textOf(first)).toContain('siteUnverifiedUser');
     expect(textOf(first)).toContain('Indexing API');
+    // The prompt names the property this server resolved, not the opaque id the
+    // model copied out of an earlier list_verified_sites result.
+    expect(textOf(first)).toContain('ownership of sc-domain:example.com');
 
     await call(client, 'unverify_site', {
       id: 'dns://example.com',
       confirm_token: tokenOf(first),
     });
-    expect(stub.calls).toHaveLength(1);
+    expect(deletes()).toBe(1);
+  });
+
+  it('refuses an id that is a path of dots', async () => {
+    // `pathSegment` percent-encodes a slash but not a dot, so ".." survives
+    // encoding and the URL parser resolves /webResource/.. back to the
+    // collection — turning a DELETE about one resource into one against all of
+    // them. Google answers 404 or 405, which is luck, not a guarantee.
+    const stub = stubFetch({});
+    const result = await call(await connect(), 'unverify_site', { id: '..' });
+    expect(result.isError).toBe(true);
+    expect(stub.calls).toHaveLength(0);
   });
 });
 

@@ -104,13 +104,58 @@ describe('budgetedJson', () => {
     );
   });
 
-  it('gives up honestly when there is nothing string-shaped left to shorten', () => {
+  it('shortens a long array, not just a long string', () => {
     const rendered = budgetedJson({
       numbers: Array.from({ length: 200_000 }, (_, index) => index),
     });
+    expect(Buffer.byteLength(rendered, 'utf8')).toBeLessThanOrEqual(
+      MAX_RESULT_BYTES
+    );
+    expect(rendered).toContain('more entries omitted');
+    // The count is cumulative across passes, not per pass — a marker that
+    // reported only the last halving would understate the loss by orders of
+    // magnitude.
+    const dropped = /… \((\d+) more entries omitted\)/.exec(rendered);
+    expect(Number(dropped?.[1])).toBeGreaterThan(190_000);
+  });
+
+  it('reaches a list nested inside the payload', () => {
+    // The case the recursion exists for. Every unbounded field of a URL
+    // inspection sits under inspectionResult.indexStatusResult, so a pass over
+    // the top level alone finds nothing and discards the whole result.
+    const rendered = budgetedJson({
+      inspectionResult: {
+        indexStatusResult: {
+          verdict: 'PASS',
+          referringUrls: Array.from(
+            { length: 50_000 },
+            (_, index) => `https://example.com/page-${index}`
+          ),
+        },
+      },
+    });
+    expect(Buffer.byteLength(rendered, 'utf8')).toBeLessThanOrEqual(
+      MAX_RESULT_BYTES
+    );
+    // The structure survived and the verdict — the thing anyone asked for — is
+    // still in it.
     expect(JSON.parse(rendered)).toMatchObject({
+      inspectionResult: { indexStatusResult: { verdict: 'PASS' } },
+    });
+  });
+
+  it('gives up honestly when nothing in it can be shortened', () => {
+    // Thousands of short keys: no long string, no list, and keys are not
+    // something this may rewrite. There is genuinely nothing to cut, and the
+    // error has to name a way forward rather than just a byte count.
+    const wide: Record<string, number> = {};
+    for (let index = 0; index < 20_000; index += 1) wide[`key${index}`] = index;
+
+    const parsed = JSON.parse(budgetedJson(wide)) as Record<string, unknown>;
+    expect(parsed).toMatchObject({
       error: expect.stringContaining('exceeds the result size budget'),
     });
+    expect(parsed.note).toContain('row_limit');
   });
 });
 
@@ -202,12 +247,19 @@ describe('the confirmation store', () => {
     );
   });
 
-  it('fingerprints a set of targets, so one confirmation is not another', () => {
+  it('fingerprints the targets, so one confirmation is not another', () => {
     expect(setResourceKey('op', ['a'])).not.toBe(
       setResourceKey('op', ['a', 'b'])
     );
-    // Order does not matter — the same set is the same operation.
-    expect(setResourceKey('op', ['a', 'b'])).toBe(
+  });
+
+  it('keeps the order significant, because the targets are a tuple', () => {
+    // delete_sitemap binds [property, feedpath] and both are URLs — drawn from
+    // the same string space. Normalising the order here would let a token
+    // issued for one pair authorise the pair with the roles swapped. A caller
+    // whose targets really are a set sorts them before passing them in, which
+    // is what update_site_owners does with its owner list.
+    expect(setResourceKey('op', ['a', 'b'])).not.toBe(
       setResourceKey('op', ['b', 'a'])
     );
   });

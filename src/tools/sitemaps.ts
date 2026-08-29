@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { GoogleApiError, pathSegment } from '../api.js';
 import { guarded } from '../guard.js';
 import { listField } from '../normalize.js';
-import { budgetedList, jsonResult, run, textResult } from '../result.js';
+import {
+  budgetedList,
+  budgetedUntrustedResult,
+  run,
+  textResult,
+} from '../result.js';
 import { confirmToken, resolveSite, siteUrlSchema, webUrl } from '../schema.js';
 import type { ToolContext } from './context.js';
 
@@ -67,6 +72,10 @@ export function registerSitemapTools(
         });
         const sitemaps = listField(body, 'sitemap');
         return budgetedList('sitemaps', sitemaps, {
+          untrusted: true,
+          narrowWith:
+            'Pass sitemap_index to list the children of one index, or call ' +
+            'get_sitemap for a single sitemap in full.',
           extra: {
             site,
             note:
@@ -100,7 +109,7 @@ export function registerSitemapTools(
     ({ site_url, feedpath }) =>
       run(async () => {
         const site = resolveSite(config, site_url);
-        return jsonResult(
+        return budgetedUntrustedResult(
           await api.get('search-console', sitemapsPath(site, feedpath))
         );
       })
@@ -197,6 +206,8 @@ export function registerSitemapTools(
 
         const failed = results.filter((entry) => !entry.ok);
         return budgetedList('results', results, {
+          narrowWith:
+            'Split the list and call submit_sitemaps again with fewer URLs.',
           extra: {
             site,
             submitted: results.length - failed.length,
@@ -233,7 +244,11 @@ export function registerSitemapTools(
             // not authorise removing a different one from the same property.
             tool: 'delete_sitemap',
             targets: [site, feedpath],
-            what: `remove the sitemap ${feedpath} from ${site}`,
+            // The property is server-derived and safe in the sentence; the
+            // feedpath is the value a model most naturally copies out of
+            // list_sitemaps, so it is quoted as data underneath instead.
+            what: `remove a sitemap from ${site}`,
+            target: feedpath,
             consequence:
               'Google stops using it to discover URLs, and the submission ' +
               'history and error report for it are discarded. The file itself ' +

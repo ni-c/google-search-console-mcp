@@ -2,14 +2,28 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { pathSegment } from '../api.js';
+import { normalizeSiteUrl, type Config } from '../config.js';
 import { guarded } from '../guard.js';
 import { listField, objectOf } from '../normalize.js';
-import { budgetedList, jsonResult, run, textResult } from '../result.js';
-import { confirmToken, resolveSite, siteUrlSchema } from '../schema.js';
+import {
+  budgetedJson,
+  budgetedList,
+  budgetedUntrustedResult,
+  run,
+  textResult,
+  untrustedResult,
+} from '../result.js';
+import {
+  allowsSite,
+  confirmToken,
+  resolveSite,
+  siteUrlSchema,
+} from '../schema.js';
 import {
   METHODS,
   TOKEN_METHODS,
   placementInstructions,
+  toSiteUrl,
   toVerificationSite,
   type VerificationSite,
 } from '../site-identity.js';
@@ -36,11 +50,22 @@ export function registerVerificationTools(
     },
     () =>
       run(async () => {
-        const items = listField(
+        const all = listField(
           await api.get('site-verification', WEB_RESOURCE),
           'items'
         );
+        // Filtered, not just refused later. The ids in this list are exactly
+        // what unverify_site and update_site_owners act on, so handing back an
+        // id for a property the operator fenced off both discloses it and
+        // invites a call that has to be refused.
+        const items = all.filter((item) =>
+          allowsSite(config, resourceSiteUrl(item) ?? '')
+        );
+        const withheld = all.length - items.length;
         return budgetedList('verified_sites', items, {
+          untrusted: true,
+          narrowWith:
+            'get_verified_site returns one entry in full by its "id".',
           extra: {
             note:
               items.length === 0
@@ -49,6 +74,13 @@ export function registerVerificationTools(
                   'process of changing it.'
                 : 'The "id" of each entry is what get_verified_site, ' +
                   'update_site_owners and unverify_site take.',
+            ...(withheld > 0
+              ? {
+                  withheld_by_configuration:
+                    `${withheld} owned site(s) are not shown because they are ` +
+                    'not listed in GSC_ALLOWED_SITES.',
+                }
+              : {}),
           },
         });
       })
@@ -65,12 +97,7 @@ export function registerVerificationTools(
     },
     ({ id }) =>
       run(async () =>
-        jsonResult(
-          await api.get(
-            'site-verification',
-            `${WEB_RESOURCE}/${pathSegment(id)}`
-          )
-        )
+        budgetedUntrustedResult(await allowedResource(api, config, id))
       )
   );
 
@@ -170,7 +197,10 @@ export function registerVerificationTools(
           'verified site'
         );
 
-        return textResult(
+        // Marked untrusted: the owner list is other people's email addresses as
+        // Google stored them, and the resource id is a string this server did
+        // not choose.
+        return untrustedResult(
           `Ownership of ${site.identifier} is verified.\n\n` +
             `Resource id: ${String(result.id ?? '(none returned)')}\n` +
             `Owners: ${listOwners(result)}\n\n` +
@@ -192,13 +222,19 @@ export function registerVerificationTools(
       annotations: { destructiveHint: true, idempotentHint: false },
     },
     ({ id, confirm_token }) =>
-      run(async () =>
-        guarded(
+      run(async () => {
+        // Fetched before the guard rather than inside it, for two reasons: the
+        // allowlist can only be checked against the resource's own site block,
+        // and the confirmation sentence then names the property this server
+        // derived instead of the opaque id the model was handed by an earlier
+        // result.
+        const property = siteUrlOf(await allowedResource(api, config, id));
+        return guarded(
           confirmations,
           {
             tool: 'unverify_site',
             targets: [id],
-            what: `give up verified ownership of ${id}`,
+            what: `give up verified ownership of ${property}`,
             consequence:
               'This credential loses owner access to the site. Any Search ' +
               'Console property for it keeps existing but drops to ' +
@@ -213,10 +249,10 @@ export function registerVerificationTools(
               'site-verification',
               `${WEB_RESOURCE}/${pathSegment(id)}`
             );
-            return textResult(`Ownership of ${id} was given up.`);
+            return textResult(`Ownership of ${property} was given up.`);
           }
-        )
-      )
+        );
+      })
   );
 
   server.registerTool(
@@ -231,7 +267,9 @@ export function registerVerificationTools(
         'owner list. Call get_verified_site first and send back the existing ' +
         'addresses plus the new one, or the others are removed. This server ' +
         'refuses a list that does not contain at least one address, because ' +
-        'that is the shape of an accidental wipe.',
+        'that is the shape of an accidental wipe.\n\n' +
+        'Two-step: the first call returns a confirmation token, the second ' +
+        'performs the change.',
       inputSchema: {
         id: idSchema(),
         owners: z
@@ -249,40 +287,129 @@ export function registerVerificationTools(
               'and PATCH ("patch") for this, and they behave identically — ' +
               'both replace the owner list. Exposed only for completeness.'
           ),
+        confirm_token: confirmToken,
       },
-      annotations: { idempotentHint: true },
+      // Destructive, despite reading like an update. `owners` is the whole list
+      // after the call, so a single well-formed argument removes every existing
+      // owner — and this server cannot put them back.
+      annotations: { destructiveHint: true, idempotentHint: false },
     },
-    ({ id, owners, method }) =>
+    ({ id, owners, method, confirm_token }) =>
       run(async () => {
-        const current = objectOf(
-          await api.get(
-            'site-verification',
-            `${WEB_RESOURCE}/${pathSegment(id)}`
-          ),
-          'verified site'
-        );
-        // The site block has to be sent back unchanged — this is a full
-        // replacement, and omitting it makes Google reject the request rather
-        // than keep what was there.
-        const result = await api.request(
-          'site-verification',
-          method === 'patch' ? 'PATCH' : 'PUT',
-          `${WEB_RESOURCE}/${pathSegment(id)}`,
-          { id, site: current.site, owners }
-        );
-        return textResult(
-          `Owners of ${id} are now: ${owners.join(', ')}\n\n` +
-            `Previously: ${listOwners(current)}\n` +
-            `${JSON.stringify(result, null, 2)}`
+        const current = await allowedResource(api, config, id);
+        const property = siteUrlOf(current);
+        return guarded(
+          confirmations,
+          {
+            tool: 'update_site_owners',
+            // The id is positional and the owners are a set, so the set half is
+            // sorted and the id is not: a token must survive the same list in a
+            // different order, and must not survive a different id.
+            targets: [id, ...[...owners].sort()],
+            what: `replace the entire owner list of ${property}`,
+            consequence:
+              'Everyone not in the new list loses ownership immediately, and ' +
+              'this server has no way to restore them — a removed owner has to ' +
+              'place a verification token again. Google refuses a change that ' +
+              'would leave the site with no owner at all, which is the only ' +
+              'safety net underneath this.',
+            target: owners.join(', '),
+            confirmToken: confirm_token,
+          },
+          async () => {
+            // The site block has to be sent back unchanged — this is a full
+            // replacement, and omitting it makes Google reject the request
+            // rather than keep what was there.
+            const result = await api.request(
+              'site-verification',
+              method === 'patch' ? 'PATCH' : 'PUT',
+              `${WEB_RESOURCE}/${pathSegment(id)}`,
+              { id, site: current.site, owners }
+            );
+            return untrustedResult(
+              `Owners of ${property} are now: ${owners.join(', ')}\n\n` +
+                `Previously: ${listOwners(current)}\n` +
+                `${budgetedJson(result)}`
+            );
+          }
         );
       })
   );
 }
 
-function idSchema(): z.ZodString {
+/**
+ * The property a verification resource stands for, or null when it is not one.
+ *
+ * The two APIs spell the same site differently — see {@link toSiteUrl} — and the
+ * verification API also owns Android apps, which have no Search Console property
+ * at all. Anything unparseable comes back as null rather than throwing, because
+ * one odd entry in an account must not fail a listing of the rest.
+ */
+function resourceSiteUrl(resource: Record<string, unknown>): string | null {
+  const site = resource.site as VerificationSite | undefined;
+  if (site === undefined || typeof site.identifier !== 'string') return null;
+  const siteUrl = toSiteUrl(site);
+  if (siteUrl === null) return null;
+  try {
+    return normalizeSiteUrl(siteUrl);
+  } catch {
+    return null;
+  }
+}
+
+/** {@link resourceSiteUrl}, for messages, where "not a property" is still a fact. */
+function siteUrlOf(resource: Record<string, unknown>): string {
+  return resourceSiteUrl(resource) ?? 'this site';
+}
+
+/**
+ * Fetches a verification resource, refusing one outside the allowlist.
+ *
+ * The id-based tools are the hole `resolveSite` cannot cover: an id is opaque,
+ * so nothing about it says which property it belongs to, and `GSC_ALLOWED_SITES`
+ * would silently not apply to the most damaging operation this server has.
+ * Mapping the resource's own site block back to a property is the only way to
+ * close it, and it costs a GET that `update_site_owners` was making anyway.
+ */
+async function allowedResource(
+  api: ToolContext['api'],
+  config: Config,
+  id: string
+): Promise<Record<string, unknown>> {
+  const resource = objectOf(
+    await api.get('site-verification', `${WEB_RESOURCE}/${pathSegment(id)}`),
+    'verified site'
+  );
+  if (config.allowedSites === undefined) return resource;
+
+  const siteUrl = resourceSiteUrl(resource);
+  if (siteUrl === null || !allowsSite(config, siteUrl)) {
+    throw new Error(
+      'That verification resource is not one of the properties in ' +
+        `GSC_ALLOWED_SITES. This server may only touch: ${config.allowedSites.join(', ')}.`
+    );
+  }
+  return resource;
+}
+
+/**
+ * The verification resource id, with the guard `encodeURIComponent` does not
+ * give.
+ *
+ * The id goes into a URL path through {@link pathSegment}, which percent-encodes
+ * a slash but leaves a dot alone — so `".."` survives encoding and the URL
+ * parser then resolves `/webResource/..` to `/webResource/`, turning a call
+ * about one resource into a `DELETE` or `PUT` against the collection. Google
+ * answers that with a 404 or 405 rather than doing anything, which is luck
+ * rather than a guarantee.
+ */
+function idSchema(): z.ZodType<string> {
   return z
     .string()
     .min(1)
+    .refine((value) => !/^\.+$/.test(value.replaceAll('/', '')), {
+      message: 'is not a resource id — a path of dots addresses the collection',
+    })
     .describe(
       'The verification resource id, as returned by list_verified_sites. It is ' +
         'not the property URL — it is an opaque string such as ' +

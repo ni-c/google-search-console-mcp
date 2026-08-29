@@ -50,16 +50,70 @@ export function resolveSite(config: Config, given: string | undefined): string {
 
   const site = normalizeSiteUrl(raw);
 
-  if (
-    config.allowedSites !== undefined &&
-    !config.allowedSites.includes(site)
-  ) {
+  if (!allowsSite(config, site)) {
     throw new Error(
       `${site} is not in GSC_ALLOWED_SITES. This server may only touch: ` +
-        `${config.allowedSites.join(', ')}.`
+        `${(config.allowedSites ?? []).join(', ')}.`
     );
   }
   return site;
+}
+
+/**
+ * Whether a normalised property is inside the allowlist.
+ *
+ * Split out of {@link resolveSite} because three callers need the question
+ * without the throw: the two list tools filter their results with it, and the
+ * verification tools ask it about a property they had to fetch first.
+ */
+export function allowsSite(config: Config, site: string): boolean {
+  return (
+    config.allowedSites === undefined || config.allowedSites.includes(site)
+  );
+}
+
+/**
+ * Checks a *page* URL against the allowlist.
+ *
+ * The Indexing API takes a page rather than a property, so `resolveSite` has
+ * nothing to work with — and without this the guard `GSC_ALLOWED_SITES` promises
+ * is simply absent on the two tools that spend a property's daily quota and tell
+ * Google about a URL. Matching has to mirror how Search Console scopes a
+ * property, which is not string equality:
+ *
+ * - a domain property covers its domain and every subdomain, at any scheme
+ * - a URL-prefix property covers exactly its origin plus a path *segment*
+ *   prefix, so `https://example.com/shop` must not cover
+ *   `https://example.com/shopping`
+ */
+export function assertUrlAllowed(config: Config, url: string): void {
+  const allowed = config.allowedSites;
+  if (allowed === undefined) return;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`"${url}" is not a valid URL`);
+  }
+  const host = parsed.hostname.toLowerCase();
+  const target = `${parsed.origin}${parsed.pathname}`;
+
+  const covered = allowed.some((site) => {
+    if (site.startsWith('sc-domain:')) {
+      const domain = site.slice('sc-domain:'.length);
+      return host === domain || host.endsWith(`.${domain}`);
+    }
+    const prefix = site.endsWith('/') ? site : `${site}/`;
+    return target === site || target.startsWith(prefix);
+  });
+
+  if (!covered) {
+    throw new Error(
+      `${url} is not inside any property in GSC_ALLOWED_SITES. This server may ` +
+        `only touch: ${allowed.join(', ')}.`
+    );
+  }
 }
 
 /**

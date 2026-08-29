@@ -142,8 +142,13 @@ function loadAuth(env: NodeJS.ProcessEnv): Auth | undefined {
   const refreshToken = env.GSC_REFRESH_TOKEN;
 
   // Don't keep credentials in the environment for the process lifetime — they
-  // are visible to child processes and in /proc/<pid>/environ.
+  // are visible to child processes and in /proc/<pid>/environ. The key *file*
+  // goes too: it is not a secret itself, but it points straight at one, and the
+  // path is captured into the config above, so nothing later needs to read it
+  // back. GOOGLE_APPLICATION_CREDENTIALS has to stay — google-auth-library
+  // re-reads it on every token request.
   delete env.GSC_SERVICE_ACCOUNT_KEY;
+  delete env.GSC_SERVICE_ACCOUNT_KEY_FILE;
   delete env.GSC_CLIENT_SECRET;
   delete env.GSC_REFRESH_TOKEN;
 

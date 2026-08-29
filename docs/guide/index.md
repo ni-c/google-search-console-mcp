@@ -40,10 +40,11 @@ so the conversation above it does not have to.
 
 ## What it is careful about
 
-Three operations cannot be undone and are two-step, requiring a token that only
+Four operations cannot be undone and are two-step, requiring a token that only
 ever appears in a previous tool result: removing a property (which discards
 roughly sixteen months of history Google will not give back), removing a sitemap,
-and giving up ownership.
+giving up ownership, and replacing the owner list — the last one because the list
+you pass is the complete list afterwards, so it removes everyone else.
 
 Everything the APIs return is marked as untrusted content. Search queries are
 strings the public typed into Google; page titles and crawl diagnostics come from

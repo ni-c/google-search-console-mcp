@@ -4,8 +4,18 @@ import { pathSegment } from '../api.js';
 import { normalizeSiteUrl } from '../config.js';
 import { guarded } from '../guard.js';
 import { listField } from '../normalize.js';
-import { budgetedList, jsonResult, run, textResult } from '../result.js';
-import { confirmToken, resolveSite, siteUrlSchema } from '../schema.js';
+import {
+  budgetedList,
+  budgetedUntrustedResult,
+  run,
+  textResult,
+} from '../result.js';
+import {
+  allowsSite,
+  confirmToken,
+  resolveSite,
+  siteUrlSchema,
+} from '../schema.js';
 import type { ToolContext } from './context.js';
 
 /** Where every Search Console property call lives. */
@@ -46,21 +56,36 @@ export function registerSiteTools(
     },
     () =>
       run(async () => {
-        const sites = listField(
+        const all = listField(
           await api.get('search-console', SITES),
           'siteEntry'
         );
+        // Filtered rather than merely refused afterwards: showing a property
+        // that every other tool will decline both discloses a name the operator
+        // fenced off and invites a call that cannot succeed.
+        const sites = all.filter((entry) =>
+          allowsSite(config, entryUrl(entry))
+        );
+        const withheld = all.length - sites.length;
         return budgetedList('sites', sites, {
-          extra:
-            sites.length === 0
+          untrusted: true,
+          narrowWith: 'get_site returns one property in full.',
+          extra: {
+            note:
+              sites.length === 0
+                ? 'This credential can see no properties at all. Add it as a ' +
+                  'user in Search Console under Settings → Users and ' +
+                  'permissions, or give it ownership with verify_site. ' +
+                  'setup_site walks through that.'
+                : PERMISSION_NOTE,
+            ...(withheld > 0
               ? {
-                  note:
-                    'This credential can see no properties at all. Add it as a ' +
-                    'user in Search Console under Settings → Users and ' +
-                    'permissions, or give it ownership with verify_site. ' +
-                    'setup_site walks through that.',
+                  withheld_by_configuration:
+                    `${withheld} propert${withheld === 1 ? 'y is' : 'ies are'} ` +
+                    'not shown because they are not listed in GSC_ALLOWED_SITES.',
                 }
-              : { note: PERMISSION_NOTE },
+              : {}),
+          },
         });
       })
   );
@@ -80,7 +105,7 @@ export function registerSiteTools(
     ({ site_url }) =>
       run(async () => {
         const site = resolveSite(config, site_url);
-        return jsonResult(
+        return budgetedUntrustedResult(
           await api.get('search-console', `${SITES}/${pathSegment(site)}`)
         );
       })
@@ -172,6 +197,24 @@ export function registerSiteTools(
   );
 }
 
+/**
+ * A property entry's identifier, normalised, or '' when it is neither kind.
+ *
+ * Never throws. Search Console also lists Android app properties
+ * (`android-app://…`), which `normalizeSiteUrl` rightly refuses — but one of
+ * those in an account must not take down a listing of everything else, or
+ * `setup_site` for an unrelated property.
+ */
+function entryUrl(entry: Record<string, unknown>): string {
+  const siteUrl = entry.siteUrl;
+  if (typeof siteUrl !== 'string') return '';
+  try {
+    return normalizeSiteUrl(siteUrl);
+  } catch {
+    return '';
+  }
+}
+
 /** Property identifiers this credential can see, for `setup_site` to compare. */
 export async function listSiteUrls(
   api: ToolContext['api']
@@ -181,15 +224,15 @@ export async function listSiteUrls(
     'siteEntry'
   );
   return entries.flatMap((entry) => {
-    const siteUrl = entry.siteUrl;
-    if (typeof siteUrl !== 'string') return [];
     // Normalised so that a comparison against a caller's spelling is a
     // comparison of properties, not of strings. Google returns what it stored,
     // which for a URL-prefix property always carries the trailing slash — but
     // the caller's does not have to.
+    const siteUrl = entryUrl(entry);
+    if (siteUrl === '') return [];
     return [
       {
-        siteUrl: normalizeSiteUrl(siteUrl),
+        siteUrl,
         permissionLevel:
           typeof entry.permissionLevel === 'string'
             ? entry.permissionLevel

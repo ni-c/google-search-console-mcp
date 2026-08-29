@@ -58,20 +58,40 @@ pushed.
   under domain-wide delegation, where an undelegated scope fails the whole token
   request. `GSC_READ_ONLY` additionally swaps `webmasters` for
   `webmasters.readonly`, so writes are impossible below the tool layer.
-- The three irreversible operations — `delete_site`, `delete_sitemap` and
-  `unverify_site` — are two-step: the first call returns a short-lived
-  confirmation token bound to those exact arguments, so a confirmation for one
-  property cannot be replayed against another.
+- The four irreversible operations — `delete_site`, `delete_sitemap`,
+  `unverify_site` and `update_site_owners` — are two-step: the first call returns
+  a short-lived confirmation token bound to those exact arguments, so a
+  confirmation for one property cannot be replayed against another, and one for a
+  two-name owner list cannot execute a three-name one. `update_site_owners` reads
+  like an update and is a replacement: the list passed becomes the complete owner
+  list, so a single well-formed call removes everyone else.
+- **`GSC_ALLOWED_SITES` has no exemptions.** Tools that name a property are
+  checked in `resolveSite`; the Indexing API tools, which name a page instead,
+  match the URL against the list the way Search Console scopes a property; and
+  the verification tools, which take an opaque resource id, resolve it to a
+  property before acting. `list_sites` and `list_verified_sites` filter to the
+  allowlist and report how many entries they withheld — the ids the second one
+  returns are what `unverify_site` acts on.
 - Search queries, page titles and crawl diagnostics are marked as untrusted
-  content. Search queries in particular are strings arbitrary members of the
-  public typed into Google, and page titles come from whoever runs the crawled
-  site.
-- Credentials are deleted from the environment after start-up, never sent to a
+  content, on every result carrying an upstream payload. Search queries in
+  particular are strings arbitrary members of the public typed into Google, and
+  page titles come from whoever runs the crawled site.
+- A confirmation prompt's two sentences are built only from values the server
+  derived. Where an operation cannot be described without naming its subject —
+  a sitemap URL, an owner list — the subject is quoted below them as data,
+  flattened to a single line so it cannot open one of its own.
+- Credentials are deleted from the environment after start-up (including the path
+  in `GSC_SERVICE_ACCOUNT_KEY_FILE`, which points at one), never sent to a
   redirect target, and never echoed into an error message — including when the
-  rejected value is a key pasted into the wrong variable.
+  rejected value is a key pasted into the wrong variable, and including the one
+  error path whose text comes from `google-auth-library` rather than from here.
 - Results are budgeted: list results drop whole entries rather than overflowing
-  the model's context, and a single oversized object has its longest text fields
-  shortened rather than being truncated into unparseable JSON.
+  the model's context and name the call that fetches the rest, and a single
+  oversized object has its largest field shortened — at any depth, arrays as well
+  as strings — rather than being truncated into unparseable JSON.
+- Verification resource ids are rejected when they are a path of dots.
+  `encodeURIComponent` escapes a slash but not a dot, so `..` would otherwise
+  resolve `/webResource/..` back to the collection endpoint.
 
 ### Notes
 

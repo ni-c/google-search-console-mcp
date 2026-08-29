@@ -17,11 +17,18 @@ import { errorResult, textResult } from './result.js';
  * `targets` is what the token is bound to. It must contain everything that
  * decides *what* gets touched, not just the property: `delete_sitemap` takes a
  * property and a feedpath, and a token issued for one sitemap must not
- * authorise removing a different one from the same property.
+ * authorise removing a different one from the same property. The order is
+ * preserved, so a caller with a genuine *set* — `update_site_owners` — sorts
+ * that part itself rather than having every tuple flattened for it.
  *
  * Nothing coming from the API may be passed into `what` or `consequence`. Those
- * strings are read by a model, and this server's upstream content includes text
- * written by the public and by whoever runs the crawled site.
+ * two sentences are the instruction a model acts on, and this server's upstream
+ * content includes text written by the public and by whoever runs the crawled
+ * site. `target` exists for the cases where the operation is meaningless without
+ * naming the thing — a sitemap URL, a list of addresses — and it is rendered
+ * outside the instruction, on its own line, flattened to a single line and
+ * capped. A confirmation that will not say what it is about is not much of a
+ * confirmation; a confirmation whose subject can rewrite the sentence is worse.
  */
 export async function guarded(
   confirmations: ConfirmationStore,
@@ -30,6 +37,8 @@ export async function guarded(
     targets: string[];
     what: string;
     consequence: string;
+    /** Shown as quoted data, never as part of the instruction. */
+    target?: string;
     confirmToken: string | undefined;
   },
   perform: () => Promise<CallToolResult>
@@ -49,12 +58,13 @@ export async function guarded(
 
   const token = confirmations.issue(resource);
   return textResult(
-    confirmationPrompt(
-      options.what,
-      options.consequence,
-      options.tool,
+    confirmationPrompt({
+      what: options.what,
+      consequence: options.consequence,
+      target: options.target,
+      toolName: options.tool,
       token,
-      confirmations.ttlMinutes
-    )
+      ttlMinutes: confirmations.ttlMinutes,
+    })
   );
 }

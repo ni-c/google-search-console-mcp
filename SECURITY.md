@@ -36,8 +36,11 @@ Four things are worth naming explicitly, because none is obvious from the APIs:
 - **Search queries are attacker-influenced text.** They are strings arbitrary
   members of the public typed into Google, and this server hands them to a model
   verbatim. Page titles, canonical URLs and crawl diagnostics come from whoever
-  runs the crawled site. All of it is marked as untrusted content, and
-  confirmation prompts never quote anything that came from an API.
+  runs the crawled site. Every result that carries an upstream payload is marked
+  as untrusted content. A confirmation prompt's two sentences — what will happen
+  and what it costs — are built only from values this server derived; where an
+  operation cannot be described without naming its subject, the subject is quoted
+  below them as data, flattened to a single line so it cannot open one of its own.
 - **Deleting a property destroys sixteen months of history.** Search Console
   retains roughly that much performance data per property, `sites.delete` discards
   all of it, and re-adding the property starts an empty history. Google offers no
@@ -58,8 +61,20 @@ narrowing the tool list narrows what the credential is used for — see
 below the tool layer rather than only above it.
 
 `GSC_ALLOWED_SITES` exists for the case where one credential can see properties
-belonging to different parts of your life. The check sits in `resolveSite`, which
-every tool passes through.
+belonging to different parts of your life. Most tools name a property and are
+checked in `resolveSite`. Two groups do not name one, and each has its own check
+rather than an exemption:
+
+- the Indexing API tools take a _page_, so `assertUrlAllowed` matches the URL
+  against the list the way Search Console scopes a property — a domain property
+  covers its subdomains, a URL-prefix property covers a path-segment prefix only
+- the three verification tools take an opaque resource id, so the resource is
+  fetched first and its own site block is mapped back to a property
+
+`list_sites` and `list_verified_sites` filter their results to the allowlist and
+say how many entries they withheld. That is not decoration: the ids returned by
+`list_verified_sites` are exactly what `unverify_site` and `update_site_owners`
+act on.
 
 There is no SSRF guard in this server, unlike its siblings, because there is
 nothing to guard: no target host is configurable, and every request goes to one of
@@ -70,5 +85,9 @@ Treat every environment variable this server reads as a secret. The MCP client
 process, and therefore the model driving it, sees every tool result — do not point
 this server at a property whose data you would not put in a model's context.
 
-The three operations that cannot be undone require a server-generated confirmation
+The four operations that cannot be undone — `delete_site`, `delete_sitemap`,
+`unverify_site` and `update_site_owners` — require a server-generated confirmation
 token bound to the exact arguments; a model cannot satisfy that gate on its own.
+`update_site_owners` belongs in that list despite reading like an update: the
+list it takes is the complete owner list afterwards, so one well-formed call
+removes everyone else and nothing here can put them back.

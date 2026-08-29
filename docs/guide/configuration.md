@@ -46,8 +46,22 @@ refused before a request goes out. It exists for the case where one Google
 account can see properties belonging to different parts of your life — work and
 personal, or several clients.
 
-The check sits in `resolveSite`, which every tool passes through, so there is no
-tool that can go around it.
+Most tools name a property, and for those the check sits in `resolveSite`. Two
+shapes of tool do not name one, and each is checked separately rather than being
+exempt:
+
+- the **Indexing API** tools take a page URL. It is matched against the list the
+  way Search Console scopes a property: `sc-domain:example.com` covers every
+  subdomain, and `https://example.com/shop` covers `…/shop/item` but not
+  `…/shopping`.
+- the **verification** tools take an opaque resource id, which says nothing about
+  the property it belongs to. The resource is fetched first and its own site
+  block mapped back to a property.
+
+`list_sites` and `list_verified_sites` also filter to the allowlist and report
+how many entries they withheld — a property listed but refused by every other
+tool is a name disclosed for nothing, and the ids from `list_verified_sites` are
+exactly what `unverify_site` acts on.
 
 ## Read-only mode
 

@@ -1,8 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import { budgetedJsonResult, run, textResult } from '../result.js';
-import { webUrl } from '../schema.js';
+import {
+  budgetedJson,
+  budgetedUntrustedResult,
+  run,
+  untrustedResult,
+} from '../result.js';
+import { assertUrlAllowed, webUrl } from '../schema.js';
 import type { ToolContext } from './context.js';
 
 /**
@@ -28,9 +33,18 @@ const OWNERSHIP_NOTE =
   'user access is not enough, and the API answers 403 without saying which of ' +
   'the two is missing.';
 
+/**
+ * These two tools are the reason {@link assertUrlAllowed} exists.
+ *
+ * Every other tool names a property and goes through `resolveSite`, which is
+ * where `GSC_ALLOWED_SITES` is enforced. The Indexing API names a page instead,
+ * so there is no property to check and the allowlist would silently not apply —
+ * on the one write tool that spends a finite daily quota and puts a URL in front
+ * of Google.
+ */
 export function registerIndexingTools(
   server: McpServer,
-  { api, readOnly }: ToolContext
+  { api, config, readOnly }: ToolContext
 ): void {
   server.registerTool(
     'get_indexing_status',
@@ -48,13 +62,14 @@ export function registerIndexingTools(
       annotations: { readOnlyHint: true },
     },
     ({ url }) =>
-      run(async () =>
-        budgetedJsonResult(
+      run(async () => {
+        assertUrlAllowed(config, url);
+        return budgetedUntrustedResult(
           await api.get('indexing', '/v3/urlNotifications/metadata', {
             query: { url },
           })
-        )
-      )
+        );
+      })
   );
 
   if (readOnly) return;
@@ -85,6 +100,7 @@ export function registerIndexingTools(
     },
     ({ url, type }) =>
       run(async () => {
+        assertUrlAllowed(config, url);
         const result = await api.post(
           'indexing',
           '/v3/urlNotifications:publish',
@@ -93,9 +109,9 @@ export function registerIndexingTools(
             type: type ?? 'URL_UPDATED',
           }
         );
-        return textResult(
+        return untrustedResult(
           `Notification accepted for ${url} (${type ?? 'URL_UPDATED'}).\n\n` +
-            `${JSON.stringify(result, null, 2)}\n\n` +
+            `${budgetedJson(result)}\n\n` +
             'Accepted is not acted upon. ' +
             SCOPE_WARNING
         );

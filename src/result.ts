@@ -33,10 +33,6 @@ export function textResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }] };
 }
 
-export function jsonResult(data: unknown): CallToolResult {
-  return textResult(JSON.stringify(data, null, 2));
-}
-
 export function errorResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }], isError: true };
 }
@@ -72,8 +68,14 @@ export function untrustedResult(text: string): CallToolResult {
 export function budgetedList(
   key: string,
   items: unknown[],
-  options: { extra?: Record<string, unknown>; narrowWith?: string } = {}
+  options: {
+    extra?: Record<string, unknown>;
+    narrowWith?: string;
+    /** Wraps the result in the untrusted-content marker. */
+    untrusted?: boolean;
+  } = {}
 ): CallToolResult {
+  const wrap = options.untrusted === true ? untrustedResult : textResult;
   const render = (shown: unknown[]): string => {
     const dropped = items.length - shown.length;
     const envelope: Record<string, unknown> = {};
@@ -99,14 +101,91 @@ export function budgetedList(
     rendered = render(shown);
   }
   if (byteLength(rendered) > MAX_RESULT_BYTES && shown.length === 1) {
-    return textResult(
+    return wrap(
       render([]).replace(
         'were dropped to stay inside the result size budget.',
         'were dropped; even a single entry exceeds the result size budget.'
       )
     );
   }
-  return textResult(rendered);
+  return wrap(rendered);
+}
+
+/** Strings longer than this are candidates for shortening. */
+const LONG_STRING = 200;
+
+/** The placeholder a shortened array ends with, and how to read its count back. */
+const OMITTED_ENTRIES = /^… \((\d+) more entries omitted\)$/;
+
+/** Rough serialized size of an array, without serializing all of it. */
+function estimateArrayBytes(value: unknown[]): number {
+  const sample = value[0];
+  return JSON.stringify(sample ?? '').length * value.length;
+}
+
+/**
+ * Finds the largest string or array anywhere in a structure and shortens it.
+ *
+ * Recursive on purpose, and that is the whole point. A URL inspection result —
+ * the case {@link budgetedJson} exists for — keeps every unbounded field under
+ * `inspectionResult.indexStatusResult`: the referring-URL list, the sitemap
+ * list, the rich-results breakdown. A pass over the top level only finds nothing
+ * there, gives up on the first iteration, and throws the entire payload away in
+ * favour of an error message. Arrays matter as much as strings for the same
+ * reason: what makes one of these oversized is a long list, not a long sentence.
+ *
+ * Each cut is marked in place, and an already-marked array is folded back into a
+ * single running count when it is cut again — otherwise the marker itself would
+ * make the array look one entry longer every pass and the loop would never
+ * finish.
+ *
+ * Returns false when nothing is left worth shortening.
+ */
+function shortenLargest(node: unknown): boolean {
+  let best: { shorten: () => void; size: number } | undefined;
+  const consider = (size: number, shorten: () => void): void => {
+    if (best === undefined || size > best.size) best = { size, shorten };
+  };
+
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      const last = value[value.length - 1];
+      const mark = typeof last === 'string' ? OMITTED_ENTRIES.exec(last) : null;
+      const entries = mark === null ? value : value.slice(0, -1);
+      if (entries.length > 1) {
+        consider(estimateArrayBytes(entries), () => {
+          const keep = Math.floor(entries.length / 2);
+          const dropped =
+            entries.length - keep + (mark === null ? 0 : Number(mark[1]));
+          const kept = entries.slice(0, keep);
+          kept.push(`… (${dropped} more entries omitted)`);
+          value.length = 0;
+          for (const item of kept) value.push(item);
+        });
+      }
+      for (const entry of entries) visit(entry);
+      return;
+    }
+    if (typeof value !== 'object' || value === null) return;
+    const record = value as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (typeof child === 'string') {
+        if (child.length > LONG_STRING) {
+          consider(child.length, () => {
+            record[key] =
+              `${child.slice(0, LONG_STRING)}… (${child.length - LONG_STRING} more characters omitted)`;
+          });
+        }
+        continue;
+      }
+      visit(child);
+    }
+  };
+
+  visit(node);
+  if (best === undefined) return false;
+  best.shorten();
+  return true;
 }
 
 /**
@@ -114,45 +193,39 @@ export function budgetedList(
  *
  * A URL inspection result is the case that needs it: it is one object, but it
  * carries a referring-URLs list, a sitemaps list and the full rich-results
- * breakdown, none of which is bounded by the input schema. Long string fields
- * are shortened longest-first until the whole thing fits, each one marked, so
- * the structure survives and the reader can see what was cut.
+ * breakdown, none of which is bounded by the input schema. The largest field
+ * anywhere in the structure is shortened repeatedly, each cut marked in place,
+ * so the shape survives and the reader can see what was lost.
  */
 export function budgetedJson(data: unknown): string {
   let rendered = JSON.stringify(data, null, 2);
   if (byteLength(rendered) <= MAX_RESULT_BYTES) return rendered;
 
-  const copy = structuredClone(data) as Record<string, unknown>;
-  const longestStringKey = (): string | undefined =>
-    Object.entries(copy)
-      .filter(
-        (entry): entry is [string, string] =>
-          typeof entry[1] === 'string' && entry[1].length > 200
-      )
-      .sort((a, b) => b[1].length - a[1].length)[0]?.[0];
-
-  for (;;) {
-    const key = longestStringKey();
-    if (key === undefined) break;
-    const value = copy[key] as string;
-    copy[key] =
-      `${value.slice(0, 200)}… (${value.length - 200} more characters omitted)`;
+  const copy = structuredClone(data);
+  while (shortenLargest(copy)) {
     rendered = JSON.stringify(copy, null, 2);
     if (byteLength(rendered) <= MAX_RESULT_BYTES) return rendered;
   }
 
   return JSON.stringify({
     error:
-      'The response exceeds the result size budget even after shortening its ' +
-      'text fields.',
+      'The response exceeds the result size budget even after shortening every ' +
+      'field it contains.',
     bytes: byteLength(rendered),
+    note:
+      'Ask for less: inspect_url for one URL rather than a batch, or ' +
+      'query_search_analytics with a smaller row_limit and fewer dimensions.',
   });
 }
 
-/** {@link budgetedJson}, wrapped as a tool result. */
-export function budgetedJsonResult(data: unknown): CallToolResult {
-  return textResult(budgetedJson(data));
-}
+/*
+ * There is deliberately no unbudgeted `jsonResult(data)` here any more.
+ *
+ * It existed, and every single-object tool used it — so `get_site`,
+ * `get_sitemap` and `get_verified_site` had no ceiling below the 64 MB response
+ * cap, on paths where a budget was the whole point. A helper that is one
+ * character shorter than the safe one is a helper that gets used by mistake.
+ */
 
 /** {@link budgetedJson}, wrapped with the untrusted-content marker. */
 export function budgetedUntrustedResult(data: unknown): CallToolResult {
@@ -160,6 +233,32 @@ export function budgetedUntrustedResult(data: unknown): CallToolResult {
 }
 
 const MAX_ERROR_BODY_LENGTH = 2000;
+
+/**
+ * Credential shapes, for the one error path this server does not author.
+ *
+ * Everything thrown by this code describes a rejected value rather than echoing
+ * it, but `google-auth-library` errors travel through `run` untouched, and a
+ * Gaxios error message has carried request context before now. Nothing observed
+ * has leaked a secret; this is so that a future library version cannot make one
+ * appear in a tool result, which is the one place it would be read by a model
+ * and then possibly written down somewhere else.
+ */
+const CREDENTIAL_SHAPES: RegExp[] = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /\bya29\.[A-Za-z0-9._-]{10,}/g,
+  /\b1\/\/[A-Za-z0-9._-]{10,}/g,
+  /\bGOCSPX-[A-Za-z0-9._-]{10,}/g,
+  /\bAIza[A-Za-z0-9._-]{10,}/g,
+];
+
+/** Replaces anything credential-shaped with a marker. */
+export function redactCredentials(text: string): string {
+  return CREDENTIAL_SHAPES.reduce(
+    (value, pattern) => value.replace(pattern, '[redacted credential]'),
+    text
+  );
+}
 
 /**
  * Limits what an upstream error body can inject into the model context.
@@ -285,7 +384,11 @@ export async function run(
     ) {
       return errorResult(`google-search-console-mcp: ${error.message}`);
     }
+    // The catch-all, and the only path here whose text this server did not
+    // write — google-auth-library throws through it.
     const message = error instanceof Error ? error.message : String(error);
-    return errorResult(`google-search-console-mcp: ${message}`);
+    return errorResult(
+      `google-search-console-mcp: ${redactCredentials(message)}`
+    );
   }
 }

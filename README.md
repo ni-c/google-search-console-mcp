@@ -232,16 +232,28 @@ ever return an error, so there is not one.
 
 ## Safety
 
-**Three operations are two-step.** `delete_site`, `delete_sitemap` and
-`unverify_site` refuse the first call and return a short-lived token bound to
-those exact arguments; the second call performs the operation. A confirmation
-issued for one property cannot be replayed against another, and the token only
-ever appears in a previous tool result, so a model cannot invent it.
+**Four operations are two-step.** `delete_site`, `delete_sitemap`,
+`unverify_site` and `update_site_owners` refuse the first call and return a
+short-lived token bound to those exact arguments; the second call performs the
+operation. A confirmation issued for one property cannot be replayed against
+another, and the token only ever appears in a previous tool result, so a model
+cannot invent it. `update_site_owners` is in that list because the list it takes
+is the complete owner list afterwards — one well-formed call removes everyone
+else, and nothing here can put them back.
 
 **Everything from the APIs is marked untrusted.** Search queries are strings the
 public typed into Google; page titles and crawl diagnostics come from whoever
 runs the crawled site. Someone who wants a model to act on their instructions can
-put them in a page title and wait to be crawled.
+put them in a page title and wait to be crawled. The two sentences of a
+confirmation prompt are built only from values the server derived; a sitemap URL
+or an owner list is quoted below them as data.
+
+**The allowlist has no exemptions.** `GSC_ALLOWED_SITES` is enforced wherever a
+tool names a property, and separately on the two shapes that do not name one: the
+Indexing API tools match the page URL against the list the way Search Console
+scopes a property, and the verification tools resolve their opaque resource id to
+a property before acting on it. Both listings filter to the allowlist and say how
+many entries they withheld.
 
 **Read-only goes below the tool layer.** `GSC_READ_ONLY=true` does not register
 the write tools _and_ requests `webmasters.readonly` instead of `webmasters`, so

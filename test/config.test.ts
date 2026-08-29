@@ -144,6 +144,28 @@ describe('choosing a credential', () => {
     expect(env.GSC_CLIENT_SECRET).toBeUndefined();
     expect(env.GSC_REFRESH_TOKEN).toBeUndefined();
   });
+
+  it('removes the key file path too, and keeps the ADC one', () => {
+    /*
+     * The path is not a secret, but it points straight at one, and the config
+     * has already captured it — nothing later reads the variable back.
+     * GOOGLE_APPLICATION_CREDENTIALS is the opposite case: google-auth-library
+     * re-reads it on every token request, so deleting it would break ADC.
+     */
+    const env: NodeJS.ProcessEnv = {
+      GSC_SERVICE_ACCOUNT_KEY_FILE: '/keys/service-account.json',
+      GOOGLE_APPLICATION_CREDENTIALS: '/keys/adc.json',
+    };
+    const config = loadConfig(env);
+
+    expect(config.auth).toEqual({
+      mode: 'service-account',
+      key: undefined,
+      keyFile: '/keys/service-account.json',
+    });
+    expect(env.GSC_SERVICE_ACCOUNT_KEY_FILE).toBeUndefined();
+    expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/keys/adc.json');
+  });
 });
 
 describe('the default property and the allowlist', () => {

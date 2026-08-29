@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { GoogleApiError } from '../api.js';
 import { listField, objectOf } from '../normalize.js';
-import { run, textResult } from '../result.js';
+import { run, untrustedResult } from '../result.js';
 import { resolveSite, siteUrlSchema } from '../schema.js';
 import {
   placementInstructions,
@@ -166,7 +166,12 @@ export function registerSetupTools(
           }
         }
 
-        return textResult(lines.join('\n'));
+        // Marked untrusted: the report carries the permission level Google
+        // stored and, when ownership is missing, a token Google generated. The
+        // steps around them are this server's own text, but the marker covers
+        // the whole block rather than pretending the two can be told apart by
+        // eye.
+        return untrustedResult(lines.join('\n'));
       })
   );
 }

@@ -126,6 +126,9 @@ export function registerInspectionTools(
         }
 
         return budgetedList('results', results, {
+          untrusted: true,
+          narrowWith:
+            'Split the list and call inspect_urls again with fewer URLs.',
           extra: { site, note: QUOTA_NOTE },
         });
       })

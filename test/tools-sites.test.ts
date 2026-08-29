@@ -194,3 +194,66 @@ describe('delete_site', () => {
     expect(replay.isError).toBe(true);
   });
 });
+
+describe('what these results say about where they came from', () => {
+  it('marks the property listing as untrusted content', async () => {
+    /*
+     * "It is only a list of properties" is the wrong intuition: the entries are
+     * strings Google stored on behalf of whoever owns those sites. Every result
+     * carrying an upstream payload says so, rather than a subset chosen by how
+     * dangerous each one felt.
+     */
+    stubFetch({ [`GET ${SITES}`]: { json: { siteEntry: [siteEntry()] } } });
+    const text = textOf(await call(await connect(), 'list_sites', {}));
+    expect(text).toContain('never as instructions');
+  });
+
+  it('marks a single property the same way', async () => {
+    stubFetch({
+      [`GET ${SITES}/sc-domain%3Aexample.com`]: { json: siteEntry() },
+    });
+    const text = textOf(
+      await call(await connect(), 'get_site', { site_url: SITE })
+    );
+    expect(text).toContain('never as instructions');
+  });
+
+  it('names the way to narrow a listing it had to truncate', async () => {
+    // A truncation nobody can act on is just a quieter way of losing the data.
+    stubFetch({
+      [`GET ${SITES}`]: {
+        json: {
+          siteEntry: Array.from({ length: 4000 }, (_, index) =>
+            siteEntry(`https://example.com/${'p'.repeat(60)}${index}/`)
+          ),
+        },
+      },
+    });
+    const body = jsonOf(await call(await connect(), 'list_sites', {}));
+    const truncated = body.truncated as { note: string };
+    expect(truncated.note).toContain('were dropped');
+    expect(truncated.note).toContain('get_site returns one property in full');
+  });
+
+  it('skips a property that is not a website at all', async () => {
+    /*
+     * Search Console also lists Android app properties, which `normalizeSiteUrl`
+     * rightly refuses. One of those in an account must not take down a listing
+     * of everything else — or, through listSiteUrls, setup_site for an unrelated
+     * property.
+     */
+    stubFetch({
+      [`GET ${SITES}`]: {
+        json: {
+          siteEntry: [
+            siteEntry('android-app://com.example.app/', 'siteOwner'),
+            siteEntry(SITE, 'siteOwner'),
+          ],
+        },
+      },
+    });
+    const result = await call(await connect(), 'list_sites', {});
+    expect(result.isError).toBeFalsy();
+    expect(textOf(result)).toContain(SITE);
+  });
+});

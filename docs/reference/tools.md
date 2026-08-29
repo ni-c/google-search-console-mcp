@@ -72,16 +72,19 @@ entirely. Google also refuses to remove a site's last owner.
 | `id` | The verification resource id, from `list_verified_sites` |
 | `confirm_token` | From this tool's first refusal |
 
-### `update_site_owners` write
+### `update_site_owners` write, two-step
 
 Replaces the owner list. This is how a second person or a service account is
-granted ownership without placing a token of their own.
+granted ownership without placing a token of their own — and, with the wrong
+list, how everybody else stops being an owner. Google's only safety net is that
+it refuses to leave a site with no owner at all.
 
 | Argument | |
 | --- | --- |
 | `id` | The verification resource id |
 | `owners` | The **complete** list afterwards. Everyone not in it loses ownership |
 | `method` | `update` (PUT, default) or `patch`. Both replace the list; the API offers both and they behave identically |
+| `confirm_token` | From this tool's first refusal |
 
 Call `get_verified_site` first and send back the existing addresses plus the new
 one. An empty list is refused — that is the shape of an accidental wipe.
@@ -165,7 +168,7 @@ does not stop the rest.
 
 Removes a sitemap. Google stops using it for discovery and the submission history
 is discarded; the file itself is untouched and `submit_sitemap` puts it back.
-The least severe of the three guarded operations.
+The least severe of the four guarded operations.
 
 ## Search analytics
 
