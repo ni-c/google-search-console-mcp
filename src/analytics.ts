@@ -152,9 +152,14 @@ function sum(
  * `shoes | nike`, or any query someone pasted a table row into — silently splits
  * the row into extra columns and shifts every number after it into the wrong
  * heading. Newlines do the same to the whole table.
+ *
+ * Backslashes go first: escaping only the pipe turns `shoes \| nike` into
+ * `shoes \\| nike`, which a Markdown reader parses as an escaped backslash
+ * followed by a live column separator — the very split the escaping is for.
  */
 export function escapeCell(value: string): string {
   return value
+    .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/[\r\n]+/g, ' ')
     .trim();

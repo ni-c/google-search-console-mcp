@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Fixed
+
+- A search query containing a backslash directly before a pipe no longer breaks
+  the analytics table. `escapeCell` escaped the pipe but not the backslash, so
+  `shoes \| nike` came out as `shoes \\| nike` — an escaped backslash followed by
+  a live column separator, which is exactly the row split the escaping prevents.
+
 ## [0.1.0] - 2026-08-29
 
 First release.

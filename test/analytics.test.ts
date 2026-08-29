@@ -109,6 +109,16 @@ describe('rendering the table', () => {
     expect(cells).toEqual(['shoes \\| nike', '1', '2', '50.00%', '1.0']);
   });
 
+  it('escapes a backslash before the pipe it precedes', () => {
+    // A query that already contains `\|` must not come out as `\\|`: the reader
+    // would take the `\\` for a literal backslash and the pipe for a column
+    // separator, splitting the row after all.
+    expect(escapeCell('shoes \\| nike')).toBe('shoes \\\\\\| nike');
+
+    const cells = escapeCell('shoes \\| nike').split(/(?<!\\)\|/);
+    expect(cells).toHaveLength(1);
+  });
+
   it('flattens a newline in a query', () => {
     expect(escapeCell('two\nlines')).toBe('two lines');
   });
