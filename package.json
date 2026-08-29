@@ -1,6 +1,6 @@
 {
   "name": "@ni-c/google-search-console-mcp",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0",
   "mcpName": "io.github.ni-c/google-search-console-mcp",
   "description": "MCP server for Google Search Console: manage properties and sitemaps, query search analytics, inspect URLs",
   "keywords": [
