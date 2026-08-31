@@ -1,15 +1,16 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { GoogleApiError } from '../api.js';
-import { listField, objectOf } from '../normalize.js';
-import { run, untrustedResult } from '../result.js';
-import { resolveSite, siteUrlSchema } from '../schema.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   placementInstructions,
   toSiteUrl,
   toVerificationSite,
   type VerificationSite,
 } from '../site-identity.js';
+import { z } from 'zod';
+
+import { GoogleApiError } from '../api.js';
+import { listField, objectOf } from '../normalize.js';
+import { run, untrustedResult } from '../result.js';
+import { resolveSite, siteUrlSchema } from '../schema.js';
 import type { ToolContext } from './context.js';
 import { listSiteUrls } from './sites.js';
 
@@ -94,7 +95,7 @@ export function registerSetupTools(
         'This reads the current state and reports the next step, including the ' +
         'DNS record or meta tag to copy when that is what is missing. It changes ' +
         'nothing.',
-      inputSchema: { site_url: siteUrlSchema(config) },
+      inputSchema: z.object({ site_url: siteUrlSchema(config) }),
       annotations: { readOnlyHint: true },
     },
     ({ site_url }) =>

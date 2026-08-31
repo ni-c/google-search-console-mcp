@@ -51,11 +51,12 @@
     "assets:check": "node scripts/gen-assets.mjs --check"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "google-auth-library": "^11.0.2",
     "zod": "^4.5.2"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "4.1.11",

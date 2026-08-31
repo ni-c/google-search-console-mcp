@@ -1,21 +1,20 @@
 import { createRequire } from 'node:module';
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { GoogleApi } from './api.js';
+import { McpServer } from '@modelcontextprotocol/server';
 import {
   createTokenSource,
   scopesFor,
   type Service,
   type TokenSource,
 } from './auth.js';
-import type { Config } from './config.js';
-import { ConfirmationStore } from './confirm.js';
 import {
   buildToolFilter,
   installToolFilter,
   type ToolFilter,
 } from './tool-filter.js';
+
+import { GoogleApi } from './api.js';
+import type { Config } from './config.js';
+import { ConfirmationStore } from './confirm.js';
 import { registerAnalyticsTools } from './tools/analytics.js';
 import { ALL_TOOLS, READ_TOOLS, TOOL_SERVICES } from './tools/catalogue.js';
 import type { ToolContext } from './tools/context.js';

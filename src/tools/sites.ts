@@ -1,9 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { pathSegment } from '../api.js';
-import { normalizeSiteUrl } from '../config.js';
-import { guarded } from '../guard.js';
-import { listField } from '../normalize.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   budgetedList,
   budgetedUntrustedResult,
@@ -16,6 +11,12 @@ import {
   resolveSite,
   siteUrlSchema,
 } from '../schema.js';
+import { z } from 'zod';
+
+import { pathSegment } from '../api.js';
+import { normalizeSiteUrl } from '../config.js';
+import { guarded } from '../guard.js';
+import { listField } from '../normalize.js';
 import type { ToolContext } from './context.js';
 
 /** Where every Search Console property call lives. */
@@ -51,7 +52,7 @@ export function registerSiteTools(
         'anything returns 403: an empty list means the identity was never added ' +
         'to any property, which is the usual state of a fresh service account. ' +
         PERMISSION_NOTE,
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     () =>
@@ -99,7 +100,7 @@ export function registerSiteTools(
         'it. Useful for settling which of the two spellings exists — ' +
         '"sc-domain:example.com" and "https://example.com/" are separate ' +
         'properties holding separate data.',
-      inputSchema: { site_url: siteUrlSchema(config) },
+      inputSchema: z.object({ site_url: siteUrlSchema(config) }),
       annotations: { readOnlyHint: true },
     },
     ({ site_url }) =>
@@ -124,7 +125,7 @@ export function registerSiteTools(
         'get a working property, use setup_site, which does this in the right ' +
         'order — get_verification_token, then the DNS record or HTML file, then ' +
         'verify_site, then this.',
-      inputSchema: {
+      inputSchema: z.object({
         // Not `siteUrlSchema`: adding a property is the one call where
         // defaulting to GSC_SITE_URL would be actively wrong. The default names
         // the property you work with; this argument names one that does not
@@ -135,7 +136,7 @@ export function registerSiteTools(
             'GSC_SITE_URL, because the property being created is by definition ' +
             'not the one you are already working with.'
         ),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     ({ site_url }) =>
@@ -165,10 +166,10 @@ export function registerSiteTools(
       description:
         'Removes a property from Search Console. Two-step: the first call ' +
         'returns a confirmation token, the second performs the removal.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         confirm_token: confirmToken,
-      },
+      }),
       annotations: { destructiveHint: true, idempotentHint: false },
     },
     ({ site_url, confirm_token }) =>

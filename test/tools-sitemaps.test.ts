@@ -195,16 +195,24 @@ describe('read-only mode', () => {
     // answer a genuinely unknown name gets — the server never advertises a
     // refusal it could have avoided listing.
     const client = await connect({ readOnly: true });
-    const result = await call(client, 'submit_sitemap', { feedpath: FEED });
-    expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain('not found');
-    expect(textOf(result)).not.toContain('disabled');
+    // SDK v2 answers an unknown tool with a JSON-RPC error rather than a result
+    // carrying isError, so both calls reject. The equivalence below is what
+    // this test is about and is unaffected by that.
+    const refusal = (name: string, args?: Record<string, unknown>) =>
+      call(client, name, args).then(
+        () => {
+          throw new Error(`${name} answered instead of being refused`);
+        },
+        (error: Error) => error.message
+      );
+
+    const suppressed = await refusal('submit_sitemap', { feedpath: FEED });
+    expect(suppressed).toContain('not found');
+    expect(suppressed).not.toContain('disabled');
 
     // And the same answer a name that never existed gets, letter for letter
     // apart from the name — that equivalence is the point.
-    const unknown = await call(client, 'no_such_tool');
-    expect(textOf(unknown).replace('no_such_tool', 'submit_sitemap')).toBe(
-      textOf(result)
-    );
+    const unknown = await refusal('no_such_tool');
+    expect(unknown.replace('no_such_tool', 'submit_sitemap')).toBe(suppressed);
   });
 });

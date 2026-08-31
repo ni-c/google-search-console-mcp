@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { GoogleApiError } from '../api.js';
@@ -43,7 +43,7 @@ export function registerInspectionTools(
         'It reports the *indexed* state, not a live fetch — a page changed an ' +
         'hour ago still shows what Google last saw. ' +
         QUOTA_NOTE,
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         inspection_url: webUrl.describe(
           'The URL to inspect. It must be inside the property.'
@@ -55,7 +55,7 @@ export function registerInspectionTools(
             'BCP-47 code for the language of the issue messages, e.g. "de-CH". ' +
               'Defaults to en-US. It affects the wording only, never the verdicts.'
           ),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     ({ site_url, inspection_url, language_code }) =>
@@ -78,7 +78,7 @@ export function registerInspectionTools(
         'The result is condensed to the verdict fields; use inspect_url for the ' +
         'full report on a single URL. ' +
         QUOTA_NOTE,
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         inspection_urls: z
           .array(webUrl)
@@ -89,7 +89,7 @@ export function registerInspectionTools(
           .string()
           .optional()
           .describe('BCP-47 code for the language of the issue messages'),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     ({ site_url, inspection_urls, language_code }) =>

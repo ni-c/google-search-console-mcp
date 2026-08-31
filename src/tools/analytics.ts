@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { renderAnalytics, type AnalyticsResponse } from '../analytics.js';
@@ -51,7 +51,7 @@ export function registerAnalyticsTools(
         'paged with start_row. And with the query dimension, Google withholds ' +
         'rare queries for anonymity, so the rows never sum to the property ' +
         'total — query without it when you need a true total.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         period: z
           .enum(PERIODS)
@@ -148,7 +148,7 @@ export function registerAnalyticsTools(
           .min(0)
           .optional()
           .describe('Zero-based offset for paging. Defaults to 0.'),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     (args) =>

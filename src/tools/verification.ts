@@ -1,10 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import { pathSegment } from '../api.js';
-import { normalizeSiteUrl, type Config } from '../config.js';
-import { guarded } from '../guard.js';
-import { listField, objectOf } from '../normalize.js';
 import {
   budgetedJson,
   budgetedList,
@@ -27,6 +22,11 @@ import {
   toVerificationSite,
   type VerificationSite,
 } from '../site-identity.js';
+
+import { pathSegment } from '../api.js';
+import { normalizeSiteUrl, type Config } from '../config.js';
+import { guarded } from '../guard.js';
+import { listField, objectOf } from '../normalize.js';
 import type { ToolContext } from './context.js';
 
 const WEB_RESOURCE = '/webResource';
@@ -45,7 +45,7 @@ export function registerVerificationTools(
         'that one is Search Console properties, this one is proven ownership, ' +
         'and a site can be in either without being in the other. setup_site ' +
         'compares the two.',
-      inputSchema: {},
+      inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     () =>
@@ -92,7 +92,7 @@ export function registerVerificationTools(
       title: 'Get one owned site',
       description:
         'Returns one verified site and the email addresses of all its owners.',
-      inputSchema: { id: idSchema() },
+      inputSchema: z.object({ id: idSchema() }),
       annotations: { readOnlyHint: true },
     },
     ({ id }) =>
@@ -115,7 +115,7 @@ export function registerVerificationTools(
         'through an existing Google product rather than a token, so they have no ' +
         'token to fetch and are only usable with verify_site directly.\n\n' +
         'Placing the token is a human step. Once it is in place, call verify_site.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         method: z
           .enum(['DNS', 'FILE', 'META'])
@@ -124,7 +124,7 @@ export function registerVerificationTools(
             'Defaults to the only sensible one for the property kind: DNS for a ' +
               'domain property, META for a URL-prefix property.'
           ),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     ({ site_url, method }) =>
@@ -169,7 +169,7 @@ export function registerVerificationTools(
         'DNS records take minutes to an hour to propagate, and a freshly ' +
         'uploaded file may still be behind a CDN cache. Retrying later is the ' +
         'normal response.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         method: z
           .enum(['DNS', 'FILE', 'META', 'ANALYTICS', 'TAG_MANAGER'])
@@ -178,7 +178,7 @@ export function registerVerificationTools(
             'Must match the method the token was obtained for. Defaults to DNS ' +
               'for a domain property and META for a URL-prefix property.'
           ),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     ({ site_url, method }) =>
@@ -218,7 +218,7 @@ export function registerVerificationTools(
       description:
         'Removes this credential from the owners of a site. Two-step: the first ' +
         'call returns a confirmation token, the second performs the removal.',
-      inputSchema: { id: idSchema(), confirm_token: confirmToken },
+      inputSchema: z.object({ id: idSchema(), confirm_token: confirmToken }),
       annotations: { destructiveHint: true, idempotentHint: false },
     },
     ({ id, confirm_token }) =>
@@ -270,7 +270,7 @@ export function registerVerificationTools(
         'that is the shape of an accidental wipe.\n\n' +
         'Two-step: the first call returns a confirmation token, the second ' +
         'performs the change.',
-      inputSchema: {
+      inputSchema: z.object({
         id: idSchema(),
         owners: z
           .array(z.string().min(3))
@@ -288,7 +288,7 @@ export function registerVerificationTools(
               'both replace the owner list. Exposed only for completeness.'
           ),
         confirm_token: confirmToken,
-      },
+      }),
       // Destructive, despite reading like an update. `owners` is the whole list
       // after the call, so a single well-formed argument removes every existing
       // owner — and this server cannot put them back.

@@ -1,10 +1,10 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import {
   confirmationPrompt,
   setResourceKey,
   type ConfirmationStore,
 } from './confirm.js';
+
 import { errorResult, textResult } from './result.js';
 
 /**

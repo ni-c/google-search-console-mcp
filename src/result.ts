@@ -1,10 +1,10 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import {
   GoogleApiError,
   ResponseTooLargeError,
   UnexpectedContentTypeError,
 } from './api.js';
+
 import type { Service } from './auth.js';
 
 /**

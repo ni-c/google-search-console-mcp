@@ -1,12 +1,12 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
 import {
   budgetedJson,
   budgetedUntrustedResult,
   run,
   untrustedResult,
 } from '../result.js';
+
 import { assertUrlAllowed, webUrl } from '../schema.js';
 import type { ToolContext } from './context.js';
 
@@ -56,9 +56,9 @@ export function registerIndexingTools(
         'the notification history only — it says nothing about whether the page ' +
         'is indexed. inspect_url answers that. ' +
         OWNERSHIP_NOTE,
-      inputSchema: {
+      inputSchema: z.object({
         url: webUrl.describe('The URL to look up the notification history for'),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     ({ url }) =>
@@ -85,7 +85,7 @@ export function registerIndexingTools(
         '\n\n' +
         OWNERSHIP_NOTE +
         ' The default quota is 200 URLs per day per project.',
-      inputSchema: {
+      inputSchema: z.object({
         url: webUrl.describe('The URL that changed'),
         type: z
           .enum(['URL_UPDATED', 'URL_DELETED'])
@@ -95,7 +95,7 @@ export function registerIndexingTools(
               'one that has been removed. URL_DELETED requires that the page ' +
               'actually returns 404 or 410 — Google checks.'
           ),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     ({ url, type }) =>
