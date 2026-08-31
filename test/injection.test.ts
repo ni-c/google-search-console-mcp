@@ -89,7 +89,12 @@ describe('what a caller can put into an outbound request', () => {
     });
 
     const put = stub.calls.find((entry) => entry.method === 'PUT');
-    expect((put?.body as Record<string, unknown>).evil).toBeUndefined();
+    // Asserted separately: with an optional chain on the line below, a PUT that
+    // never happened would read as "evil was not forwarded" and pass.
+    expect(put, 'the update must have been sent').toBeDefined();
+    expect(
+      (put?.body as Record<string, unknown> | undefined)?.evil
+    ).toBeUndefined();
   });
 });
 
