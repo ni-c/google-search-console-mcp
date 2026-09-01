@@ -41,7 +41,7 @@ const MAX_BATCH = 50;
 
 export function registerSitemapTools(
   server: McpServer,
-  { api, config, confirmations, readOnly }: ToolContext
+  { api, approval, config, confirmations, readOnly }: ToolContext
 ): void {
   server.registerTool(
     'list_sitemaps',
@@ -234,10 +234,13 @@ export function registerSitemapTools(
       }),
       annotations: { destructiveHint: true, idempotentHint: false },
     },
-    ({ site_url, feedpath, confirm_token }) =>
+    ({ site_url, feedpath, confirm_token }, mcp) =>
       run(async () => {
         const site = resolveSite(config, site_url);
         return guarded(
+          server,
+          mcp,
+          approval,
           confirmations,
           {
             // Both the property and the feedpath: a token for one sitemap must

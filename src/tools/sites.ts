@@ -40,7 +40,7 @@ const PERMISSION_NOTE =
 
 export function registerSiteTools(
   server: McpServer,
-  { api, config, confirmations, readOnly }: ToolContext
+  { api, approval, config, confirmations, readOnly }: ToolContext
 ): void {
   server.registerTool(
     'list_sites',
@@ -172,10 +172,13 @@ export function registerSiteTools(
       }),
       annotations: { destructiveHint: true, idempotentHint: false },
     },
-    ({ site_url, confirm_token }) =>
+    ({ site_url, confirm_token }, mcp) =>
       run(async () => {
         const site = resolveSite(config, site_url);
         return guarded(
+          server,
+          mcp,
+          approval,
           confirmations,
           {
             tool: 'delete_site',

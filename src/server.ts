@@ -14,7 +14,7 @@ import {
 
 import { GoogleApi } from './api.js';
 import type { Config } from './config.js';
-import { ConfirmationStore } from './confirm.js';
+import { ConfirmationStore, createApproval } from 'mcp-approval';
 import { registerAnalyticsTools } from './tools/analytics.js';
 import {
   ALL_TOOLS,
@@ -150,6 +150,9 @@ export function createServer(
     ),
     config,
     confirmations: new ConfirmationStore(),
+    // One approver per server: it holds the key that seals the request state
+    // carried out through the client and back.
+    approval: createApproval({ server: 'google-search-console-mcp' }),
     readOnly: config.readOnly,
   };
 

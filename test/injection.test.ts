@@ -115,7 +115,9 @@ describe('the confirmation prompt', () => {
     const text = textOf(result);
 
     expect(text).toContain(`This will remove a sitemap from ${SITE}`);
-    expect(text).toContain('as data');
+    // The wording is the library's, and it makes the same promise: the line
+    // says these values are the caller's, not the server's.
+    expect(text).toContain('supplied by the caller, not by this server');
     expect(text).toContain('https://example.com/sitemap.xml');
     // The URL must not be inside the instruction sentence itself.
     const sentence = text.slice(0, text.indexOf('.'));

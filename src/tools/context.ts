@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 
 import type { GoogleApi } from '../api.js';
 import type { Config } from '../config.js';
-import type { ConfirmationStore } from '../confirm.js';
 
 /**
  * What every tool module gets.
@@ -21,6 +21,8 @@ export interface ToolContext {
   api: GoogleApi;
   config: Config;
   confirmations: ConfirmationStore;
+  /** Asks a person where the client can show a prompt; the store is the fallback. */
+  approval: Approver;
   readOnly: boolean;
 }
 

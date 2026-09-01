@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ConfirmationStore, setResourceKey } from '../src/confirm.js';
+import { tupleResourceKey } from '../src/guard.js';
 import { listField, objectOf } from '../src/normalize.js';
 import {
   budgetedJson,
@@ -230,49 +230,25 @@ describe('objectOf', () => {
   });
 });
 
-describe('the confirmation store', () => {
-  it('expires a token', () => {
-    const store = new ConfirmationStore(0);
-    const token = store.issue('delete_site:x');
-    expect(store.consume('delete_site:x', token)).toBe(false);
-  });
-
-  it('refuses a token for a different resource', () => {
-    const store = new ConfirmationStore();
-    const token = store.issue('delete_site:a');
-    expect(store.consume('delete_site:b', token)).toBe(false);
-  });
-
-  it('refuses a missing token', () => {
-    const store = new ConfirmationStore();
-    store.issue('x');
-    expect(store.consume('x', undefined)).toBe(false);
-  });
-
-  it('bounds the map so refused calls cannot grow it forever', () => {
-    const store = new ConfirmationStore();
-    for (let index = 0; index < 150; index += 1)
-      store.issue(`resource-${index}`);
-    // The oldest were evicted; the newest still works.
-    expect(store.consume('resource-149', store.issue('resource-149'))).toBe(
-      true
-    );
-  });
+describe('the tuple resource key', () => {
+  // The confirmation store itself lives in mcp-approval and is tested there.
+  // What stays here is the one decision this repository makes differently.
 
   it('fingerprints the targets, so one confirmation is not another', () => {
-    expect(setResourceKey('op', ['a'])).not.toBe(
-      setResourceKey('op', ['a', 'b'])
+    expect(tupleResourceKey('op', ['a'])).not.toBe(
+      tupleResourceKey('op', ['a', 'b'])
     );
   });
 
   it('keeps the order significant, because the targets are a tuple', () => {
-    // delete_sitemap binds [property, feedpath] and both are URLs — drawn from
-    // the same string space. Normalising the order here would let a token
-    // issued for one pair authorise the pair with the roles swapped. A caller
-    // whose targets really are a set sorts them before passing them in, which
-    // is what update_site_owners does with its owner list.
-    expect(setResourceKey('op', ['a', 'b'])).not.toBe(
-      setResourceKey('op', ['b', 'a'])
+    // This is why `setResourceKey` from mcp-approval is deliberately not used:
+    // it sorts. delete_sitemap binds [property, feedpath] and both are URLs,
+    // drawn from the same string space, so normalising the order would let a
+    // token issued for one pair authorise the pair with the roles swapped. A
+    // caller whose targets really are a set sorts them before passing them in,
+    // which is what update_site_owners does with its owner list.
+    expect(tupleResourceKey('op', ['a', 'b'])).not.toBe(
+      tupleResourceKey('op', ['b', 'a'])
     );
   });
 });

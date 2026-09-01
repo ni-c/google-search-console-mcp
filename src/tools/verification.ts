@@ -33,7 +33,7 @@ const WEB_RESOURCE = '/webResource';
 
 export function registerVerificationTools(
   server: McpServer,
-  { api, config, confirmations, readOnly }: ToolContext
+  { api, approval, config, confirmations, readOnly }: ToolContext
 ): void {
   server.registerTool(
     'list_verified_sites',
@@ -221,7 +221,7 @@ export function registerVerificationTools(
       inputSchema: z.object({ id: idSchema(), confirm_token: confirmToken }),
       annotations: { destructiveHint: true, idempotentHint: false },
     },
-    ({ id, confirm_token }) =>
+    ({ id, confirm_token }, mcp) =>
       run(async () => {
         // Fetched before the guard rather than inside it, for two reasons: the
         // allowlist can only be checked against the resource's own site block,
@@ -230,6 +230,9 @@ export function registerVerificationTools(
         // result.
         const property = siteUrlOf(await allowedResource(api, config, id));
         return guarded(
+          server,
+          mcp,
+          approval,
           confirmations,
           {
             tool: 'unverify_site',
@@ -294,11 +297,14 @@ export function registerVerificationTools(
       // owner — and this server cannot put them back.
       annotations: { destructiveHint: true, idempotentHint: false },
     },
-    ({ id, owners, method, confirm_token }) =>
+    ({ id, owners, method, confirm_token }, mcp) =>
       run(async () => {
         const current = await allowedResource(api, config, id);
         const property = siteUrlOf(current);
         return guarded(
+          server,
+          mcp,
+          approval,
           confirmations,
           {
             tool: 'update_site_owners',
