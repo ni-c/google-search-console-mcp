@@ -55,3 +55,28 @@ compose file does not mean "allow nothing". An entry that matches no tool stops
 the server with the list of real names.
 
 See [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
+
+## Asking a person
+
+| Variable | Description |
+| --- | --- |
+| `ELICITATION` | `false` replaces the approval dialog with the two-call token. Default `true`. **Not prefixed** |
+
+Whether a client that *can* show a dialog is asked before `delete_site`,
+`delete_sitemap`, `unverify_site` or `update_site_owners` acts. `false` takes the
+two-call-token path instead — it does not remove the guard, and a server started
+with it off prints one line saying so.
+
+Two ways it differs from every other variable on this page:
+
+- **No prefix.** One `export ELICITATION=false` reaches every MCP server in the
+  same environment, not just this one. That is the point of it and also its risk;
+  see [Asking a person](/guide/approval).
+- **Fatal on anything else.** Where `GSC_READ_ONLY` fails *off* on a typo, this
+  one stops the server with exit code 1. It is the only variable here that
+  defaults to *on*, and a typo that fell back would leave the dialog running
+  while you believed it was off.
+
+Values are trimmed and matched case-insensitively. It is read *after* the
+credentials are deleted from `process.env`, so the fatal path cannot leave them
+sitting there for a crash reporter.

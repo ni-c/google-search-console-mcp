@@ -86,8 +86,14 @@ process, and therefore the model driving it, sees every tool result — do not p
 this server at a property whose data you would not put in a model's context.
 
 The four operations that cannot be undone — `delete_site`, `delete_sitemap`,
-`unverify_site` and `update_site_owners` — require a server-generated confirmation
-token bound to the exact arguments; a model cannot satisfy that gate on its own.
+`unverify_site` and `update_site_owners` — **ask a person** through MCP
+elicitation: a dialog raised by the server and shown by the client, which the
+model cannot answer on its behalf, and which nothing proceeds without. Where the
+client cannot show a dialog they fall back to a server-generated token bound to
+the exact arguments, which proves the call was made twice with the same arguments
+and nothing more; the fallback text says so. `ELICITATION=false` moves a capable
+client onto that fallback deliberately, and the server prints one line at startup
+saying it is off.
 `update_site_owners` belongs in that list despite reading like an update: the
 list it takes is the complete owner list afterwards, so one well-formed call
 removes everyone else and nothing here can put them back.

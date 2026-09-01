@@ -16,7 +16,7 @@ service that tells you how Google sees your site — this reads it and sets it u
 Lets MCP clients like Claude Code, Claude Desktop or Codex create a property and
 prove ownership of it, submit and refresh sitemaps, ask what any URL's index
 status is, and query the whole Performance report — with the irreversible
-operations behind a confirmation token and the write tools switchable off
+operations put to a person first and the write tools switchable off
 entirely.
 
 21 tools is the ceiling, not the floor: `GSC_ALLOW_TOOLS=essential` registers a
@@ -96,6 +96,7 @@ registries and sandbox inspectors can introspect it.
 | `GSC_READ_ONLY`                  | `true` registers only the twelve read tools                                                                    |
 | `GSC_ALLOW_TOOLS`                | Comma-separated tool names, a `list_*` prefix, or `essential`                                                  |
 | `GSC_DENY_TOOLS`                 | Same shape, subtracted from whatever the allow list left                                                       |
+| `ELICITATION`                    | `false` replaces the approval dialog with the two-call token. **Not prefixed**                                 |
 
 Credentials are tried in that order — explicit beats ambient. A **partial** OAuth
 triple is a startup error rather than a reason to fall through to application
@@ -196,23 +197,23 @@ docker run --rm -i \
 | `list_sites`             | Every property this credential can see, with its permission level                                                      |
 | `get_site`               | One property — the way to settle which of the two spellings exists                                                     |
 | `add_site`               | Adds a property. Does **not** verify ownership                                                                         |
-| `delete_site`            | Removes a property and its history. Two-step                                                                           |
+| `delete_site` 👤         | Removes a property and its history                                                                                     |
 | `list_verified_sites`    | Sites this credential has proven ownership of, with all owners                                                         |
 | `get_verified_site`      | One of them by its opaque resource id                                                                                  |
 | `get_verification_token` | The token, and exactly where to put it. Claims nothing                                                                 |
 | `verify_site`            | Checks for the placed token and records ownership                                                                      |
-| `unverify_site`          | Gives up ownership. Two-step                                                                                           |
+| `unverify_site` 👤       | Gives up ownership                                                                                                     |
 | `update_site_owners`     | Replaces the owner list. `method: "patch"` uses PATCH, which behaves identically                                       |
 
 ### Sitemaps
 
-| Tool              | What it does                                                   |
-| ----------------- | -------------------------------------------------------------- |
-| `list_sitemaps`   | Submitted sitemaps, with download times, URL counts and errors |
-| `get_sitemap`     | One sitemap — where a submission's errors actually appear      |
-| `submit_sitemap`  | Submits or refreshes one. There is no separate update call     |
-| `submit_sitemaps` | Up to 50 in one call, with per-entry results                   |
-| `delete_sitemap`  | Removes one. Two-step                                          |
+| Tool                | What it does                                                   |
+| ------------------- | -------------------------------------------------------------- |
+| `list_sitemaps`     | Submitted sitemaps, with download times, URL counts and errors |
+| `get_sitemap`       | One sitemap — where a submission's errors actually appear      |
+| `submit_sitemap`    | Submits or refreshes one. There is no separate update call     |
+| `submit_sitemaps`   | Up to 50 in one call, with per-entry results                   |
+| `delete_sitemap` 👤 | Removes one                                                    |
 
 ### Search analytics and indexing
 
@@ -232,14 +233,18 @@ ever return an error, so there is not one.
 
 ## Safety
 
-**Four operations are two-step.** `delete_site`, `delete_sitemap`,
-`unverify_site` and `update_site_owners` refuse the first call and return a
-short-lived token bound to those exact arguments; the second call performs the
-operation. A confirmation issued for one property cannot be replayed against
-another, and the token only ever appears in a previous tool result, so a model
-cannot invent it. `update_site_owners` is in that list because the list it takes
-is the complete owner list afterwards — one well-formed call removes everyone
-else, and nothing here can put them back.
+**Four operations ask a person.** `delete_site`, `delete_sitemap`,
+`unverify_site` and `update_site_owners` raise a real dialog through MCP
+elicitation where the client supports it — one the model cannot answer on its
+behalf. Where it does not, they refuse the first call and return a short-lived
+token bound to those exact arguments, and say so rather than implying somebody
+approved. Either way the approval is bound to the property, so one issued for one
+cannot be replayed against another. `update_site_owners` is in that list because
+the list it takes is the complete owner list afterwards — one well-formed call
+removes everyone else, and nothing here can put them back.
+`ELICITATION=false` takes the fallback path deliberately; it never removes the
+guard. See
+[Asking a person](https://google-search-console-mcp.ni-c.de/guide/approval).
 
 **Everything from the APIs is marked untrusted.** Search queries are strings the
 public typed into Google; page titles and crawl diagnostics come from whoever

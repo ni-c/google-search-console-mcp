@@ -77,6 +77,18 @@ read-only one — `siteverification.verify_only` is write-only and cannot list. 
 that matters, deny the verification tools as well and the scope goes away with
 them.
 
+## Turning the approval dialog off
+
+`delete_site`, `delete_sitemap`, `unverify_site` and `update_site_owners` ask a
+person through MCP elicitation before they act. `ELICITATION=false` takes them to
+the two-call token instead. It does not remove the guard; there is no setting in
+which a guarded call goes unannounced.
+
+The variable deliberately carries no `GSC_` prefix, which means it reaches every
+MCP server in the same environment, and — unlike `GSC_READ_ONLY` — a value it does
+not recognise **stops the server** rather than failing off. See
+[Asking a person](/guide/approval).
+
 ## Choosing the tools that load
 
 Twenty-one tools is a lot to put in front of a model that needs three of them.

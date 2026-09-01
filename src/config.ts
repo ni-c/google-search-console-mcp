@@ -53,6 +53,14 @@ export interface Config {
   /** When true, only the read tools are registered at all. */
   readOnly: boolean;
   /**
+   * Whether a client that *can* show a dialog is asked before a guarded tool
+   * acts. `ELICITATION=false` turns the dialog off — the guard stays and falls
+   * back to the two-call token, so there is no setting in which a guarded call
+   * goes unannounced.
+   */
+  elicitation: boolean;
+
+  /**
    * Raw value of `GSC_ALLOW_TOOLS` — comma-separated tool names, `list_*`
    * prefixes, or `essential`. Kept unparsed on purpose: this file is a mirror of
    * the environment, and the names can only be checked against the tool
@@ -83,6 +91,30 @@ export function missingConfigMessage(): string {
 }
 
 /**
+ * Reads `ELICITATION` — deliberately unprefixed, and deliberately fatal on
+ * anything it does not recognise.
+ *
+ * Unprefixed: environment variables are process-wide, so this is one switch for
+ * every server in the same environment. That is also its risk, which is why a
+ * server started with it off says so on its startup line.
+ *
+ * Fatal: this is the first variable of the family that defaults to *on*. The
+ * others fail open on a typo, which is the safe direction for them. Here a typo
+ * would leave the dialog running while the operator believes it is off — and an
+ * operator who believes that has no way to find out. It goes through `fail`
+ * like every other refusal in this file, so there is one exit rather than two.
+ */
+export function parseElicitation(raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (value === undefined || value === '' || value === 'true') return true;
+  if (value === 'false') return false;
+  return fail(
+    `ELICITATION must be "true" or "false" — got "${raw}". ` +
+      'Refusing to start rather than guess.'
+  );
+}
+
+/**
  * Reads the configuration from environment variables.
  *
  * Missing credentials are only a warning. A *malformed* configuration still
@@ -95,6 +127,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const denyTools = env.GSC_DENY_TOOLS;
 
   const auth = loadAuth(env);
+  // After loadAuth, deliberately: that is where the credentials are wiped from
+  // the environment, and this one can exit the process.
+  const elicitation = parseElicitation(env.ELICITATION);
   const defaultSiteUrl = loadDefaultSite(env);
   const allowedSites = loadAllowedSites(env);
 
@@ -117,6 +152,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     defaultSiteUrl,
     allowedSites,
     readOnly,
+    elicitation,
     allowTools,
     denyTools,
   };

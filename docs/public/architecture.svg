@@ -51,7 +51,7 @@
     <rect class="node-accent" x="248" y="100" width="196" height="100" rx="10" />
     <text class="label-title" x="346" y="133" text-anchor="middle">Search Console MCP</text>
     <text class="label-muted" x="346" y="153" text-anchor="middle">21 tools, 5 essential</text>
-    <text class="label-muted" x="346" y="173" text-anchor="middle">confirm tokens</text>
+    <text class="label-muted" x="346" y="173" text-anchor="middle">asks a person</text>
 
     <path class="edge-accent" d="M166,150 L240,150" marker-end="url(#arch-arrow-accent)" />
     <text class="label-mono" x="203" y="138" text-anchor="middle">stdio</text>

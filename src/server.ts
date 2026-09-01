@@ -152,7 +152,10 @@ export function createServer(
     confirmations: new ConfirmationStore(),
     // One approver per server: it holds the key that seals the request state
     // carried out through the client and back.
-    approval: createApproval({ server: 'google-search-console-mcp' }),
+    approval: createApproval({
+      server: 'google-search-console-mcp',
+      elicitation: config.elicitation,
+    }),
     readOnly: config.readOnly,
   };
 

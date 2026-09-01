@@ -27,6 +27,51 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('ELICITATION', () => {
+  it('defaults to on, and to on for an empty value', () => {
+    // The only variable of this family that defaults to *on*. An unset switch
+    // has to mean "ask", or a deployment that never heard of it would quietly
+    // stop asking.
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(loadConfig({}).elicitation).toBe(true);
+    expect(loadConfig({ ELICITATION: '' }).elicitation).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('is switched off by "false", in any casing or padding', () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const raw of ['false', 'FALSE', ' False ']) {
+      expect(loadConfig({ ELICITATION: raw }).elicitation, raw).toBe(false);
+    }
+    warn.mockRestore();
+  });
+
+  it('refuses to start on anything else, naming both valid values', () => {
+    // Deliberately fatal rather than falling back to the default: a typo would
+    // leave the dialog running while the operator believes it is off, and
+    // nothing else would ever tell them. It goes through `fail`, like every
+    // other refusal in config.ts.
+    for (const raw of ['1', 'off', 'no']) {
+      expectExit({ ELICITATION: raw }, /ELICITATION must be "true" or "false"/);
+    }
+  });
+
+  it('has already wiped the credentials by the time it can exit', () => {
+    // parseElicitation sits *after* loadAuth on purpose. loadAuth is where the
+    // secrets are deleted from the environment, and an exit above it would
+    // leave them there for whatever a crash reporter does next.
+    const env: NodeJS.ProcessEnv = {
+      GSC_CLIENT_ID: 'id.apps.googleusercontent.com',
+      GSC_CLIENT_SECRET: 'shh',
+      GSC_REFRESH_TOKEN: '1//refresh',
+      ELICITATION: 'nonsense',
+    };
+    expectExit(env, /ELICITATION/);
+    expect(env.GSC_CLIENT_SECRET).toBeUndefined();
+    expect(env.GSC_REFRESH_TOKEN).toBeUndefined();
+  });
+});
+
 describe('choosing a credential', () => {
   it('starts with no credential at all, so tools stay listable', () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);

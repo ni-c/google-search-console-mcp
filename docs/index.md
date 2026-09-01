@@ -29,6 +29,8 @@ features:
     details: 'Search Console does not include ownership. Site Verification is a separate service with its own scope, its own host and an incompatible way of naming the same site; the Indexing API is a third. All three are covered, and the translation between them is handled for you.'
   - title: Only the tools you want
     details: 'GSC_READ_ONLY=true registers the twelve read tools and nothing else. GSC_ALLOW_TOOLS cuts finer — essential for a curated five, your own comma-separated list, or a whole family with list_* — and GSC_DENY_TOOLS subtracts. Whatever is filtered out does not exist on the protocol rather than failing when called, and a name that matches no tool stops the server at startup instead of quietly going missing. Narrowing the list narrows the OAuth scopes it asks Google for.'
+  - title: Irreversible calls ask a person
+    details: 'delete_site, delete_sitemap, unverify_site and update_site_owners raise a real dialog through MCP elicitation — one the model cannot answer on its behalf. Where the client cannot show one they fall back to a single-use token bound to the exact arguments, and say which of the two it was rather than implying somebody approved.'
   - title: Numbers you can quote
     details: CTR comes from the totals rather than an average of row CTRs, average position is weighted by impressions, and the result says plainly that rows do not sum to the property total when the query dimension is used.
 ---
@@ -55,7 +57,7 @@ features:
   <rect class="node-accent" x="248" y="100" width="196" height="100" rx="10" />
   <text class="label-title" x="346" y="133" text-anchor="middle">Search Console MCP</text>
   <text class="label-muted" x="346" y="153" text-anchor="middle">21 tools, 5 essential</text>
-  <text class="label-muted" x="346" y="173" text-anchor="middle">confirm tokens</text>
+  <text class="label-muted" x="346" y="173" text-anchor="middle">asks a person</text>
 
   <path class="edge-accent" d="M166,150 L240,150" marker-end="url(#arch-arrow-accent)" />
   <text class="label-mono" x="203" y="138" text-anchor="middle">stdio</text>

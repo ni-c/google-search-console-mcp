@@ -15,6 +15,15 @@ async function main(): Promise<void> {
       `${NAME}: GSC_READ_ONLY=true — write tools are not registered`
     );
   }
+  // Printed only when it is off, like the line above. ELICITATION is
+  // unprefixed, so one `export ELICITATION=false` reaches every MCP server in
+  // the environment — this line is what makes that visible in the log of each
+  // one it actually reached.
+  if (!config.elicitation) {
+    console.error(
+      `${NAME}: ELICITATION=false — guarded tools fall back to the two-call token`
+    );
+  }
   if (config.allowedSites !== undefined) {
     console.error(
       `${NAME}: GSC_ALLOWED_SITES — restricted to ${config.allowedSites.join(', ')}`
