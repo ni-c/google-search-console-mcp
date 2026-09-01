@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { renderAnalytics, type AnalyticsResponse } from '../analytics.js';
+import { READ_ONLY } from './annotations.js';
 import { pathSegment } from '../api.js';
 import { PERIODS, resolveDateRange } from '../dates.js';
 import { objectOf } from '../normalize.js';
@@ -149,7 +150,7 @@ export function registerAnalyticsTools(
           .optional()
           .describe('Zero-based offset for paging. Defaults to 0.'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     (args) =>
       run(async () => {

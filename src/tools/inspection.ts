@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { GoogleApiError } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { objectOf } from '../normalize.js';
 import { budgetedList, budgetedUntrustedResult, run } from '../result.js';
 import { resolveSite, siteUrlSchema, webUrl } from '../schema.js';
@@ -56,7 +57,7 @@ export function registerInspectionTools(
               'Defaults to en-US. It affects the wording only, never the verdicts.'
           ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url, inspection_url, language_code }) =>
       run(async () => {
@@ -90,7 +91,7 @@ export function registerInspectionTools(
           .optional()
           .describe('BCP-47 code for the language of the issue messages'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url, inspection_urls, language_code }) =>
       run(async () => {

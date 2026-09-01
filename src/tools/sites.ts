@@ -14,6 +14,7 @@ import {
 import { z } from 'zod';
 
 import { pathSegment } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { normalizeSiteUrl } from '../config.js';
 import { guarded } from '../guard.js';
 import { listField } from '../normalize.js';
@@ -53,7 +54,7 @@ export function registerSiteTools(
         'to any property, which is the usual state of a fresh service account. ' +
         PERMISSION_NOTE,
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     () =>
       run(async () => {
@@ -101,7 +102,7 @@ export function registerSiteTools(
         '"sc-domain:example.com" and "https://example.com/" are separate ' +
         'properties holding separate data.',
       inputSchema: z.object({ site_url: siteUrlSchema(config) }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url }) =>
       run(async () => {
@@ -137,7 +138,14 @@ export function registerSiteTools(
             'not the one you are already working with.'
         ),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Additive: it brings a property into Search Console. Adding one
+        // that exists returns the existing property.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ site_url }) =>
       run(async () => {
@@ -170,7 +178,15 @@ export function registerSiteTools(
         site_url: siteUrlSchema(config),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true, idempotentHint: false },
+      annotations: {
+        // Discards roughly sixteen months of performance data. Re-adding the
+        // property starts an empty history — that is what is destroyed here,
+        // not the entry in a list.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ site_url, confirm_token }, mcp) =>
       run(async () => {

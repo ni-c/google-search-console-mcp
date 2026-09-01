@@ -8,6 +8,7 @@ import {
 } from '../result.js';
 
 import { GoogleApiError, pathSegment } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { guarded } from '../guard.js';
 import { listField } from '../normalize.js';
 import { confirmToken, resolveSite, siteUrlSchema, webUrl } from '../schema.js';
@@ -62,7 +63,7 @@ export function registerSitemapTools(
               'the children of an index are not.'
           ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url, sitemap_index }) =>
       run(async () => {
@@ -104,7 +105,7 @@ export function registerSitemapTools(
           'The full URL of the sitemap, e.g. https://example.com/sitemap.xml'
         ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -134,7 +135,14 @@ export function registerSitemapTools(
             'https://example.com/sitemap.xml for https://example.com/'
         ),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Additive. Submitting the same sitemap again re-registers the same
+        // one.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -175,7 +183,13 @@ export function registerSitemapTools(
           .max(MAX_BATCH)
           .describe('The full URLs of the sitemaps to submit'),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // The same, for several at once.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ site_url, feedpaths }) =>
       run(async () => {
@@ -232,7 +246,15 @@ export function registerSitemapTools(
         feedpath: webUrl.describe('The full URL of the sitemap to remove'),
         confirm_token: confirmToken,
       }),
-      annotations: { destructiveHint: true, idempotentHint: false },
+      annotations: {
+        // Google stops using it to find URLs, and the submission history and
+        // error report for it are discarded. submit_sitemap puts the sitemap
+        // back but not its history.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ site_url, feedpath, confirm_token }, mcp) =>
       run(async () => {

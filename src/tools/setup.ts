@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 
 import { GoogleApiError } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { listField, objectOf } from '../normalize.js';
 import { run, untrustedResult } from '../result.js';
 import { resolveSite, siteUrlSchema } from '../schema.js';
@@ -96,7 +97,7 @@ export function registerSetupTools(
         'DNS record or meta tag to copy when that is what is missing. It changes ' +
         'nothing.',
       inputSchema: z.object({ site_url: siteUrlSchema(config) }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url }) =>
       run(async () => {

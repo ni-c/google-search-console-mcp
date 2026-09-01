@@ -60,6 +60,56 @@ describe('the catalogue and the server agree', () => {
     }
   });
 
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world. Five write tools here stated only
+    // idempotentHint and inherited the rest.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('warns only where history or access is lost', async () => {
+    // What a property holds is sixteen months of performance data, and that is
+    // what delete_site destroys — re-adding starts empty. Adding, submitting
+    // and verifying take nothing away, and all five used to inherit
+    // destructiveHint: true from the default.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t.annotations]));
+    for (const additive of [
+      'add_site',
+      'verify_site',
+      'submit_sitemap',
+      'submit_sitemaps',
+      'request_indexing',
+    ]) {
+      expect(byName.get(additive)?.destructiveHint, additive).toBe(false);
+    }
+    for (const destructive of [
+      'delete_site',
+      'delete_sitemap',
+      'unverify_site',
+      'update_site_owners',
+    ]) {
+      expect(byName.get(destructive)?.destructiveHint, destructive).toBe(true);
+    }
+  });
+
   it('assigns every tool to at least one Google service', () => {
     // Without this, a new tool silently contributes no scope and fails at
     // runtime with a 403 that blames permissions.

@@ -24,6 +24,7 @@ import {
 } from '../site-identity.js';
 
 import { pathSegment } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { normalizeSiteUrl, type Config } from '../config.js';
 import { guarded } from '../guard.js';
 import { listField, objectOf } from '../normalize.js';
@@ -46,7 +47,7 @@ export function registerVerificationTools(
         'and a site can be in either without being in the other. setup_site ' +
         'compares the two.',
       inputSchema: z.object({}),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     () =>
       run(async () => {
@@ -93,7 +94,7 @@ export function registerVerificationTools(
       description:
         'Returns one verified site and the email addresses of all its owners.',
       inputSchema: z.object({ id: idSchema() }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ id }) =>
       run(async () =>
@@ -125,7 +126,7 @@ export function registerVerificationTools(
               'domain property, META for a URL-prefix property.'
           ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ site_url, method }) =>
       run(async () => {
@@ -179,7 +180,14 @@ export function registerVerificationTools(
               'for a domain property and META for a URL-prefix property.'
           ),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Additive: it claims ownership. Verifying an already verified site
+        // leaves it verified.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ site_url, method }) =>
       run(async () => {
@@ -219,7 +227,15 @@ export function registerVerificationTools(
         'Removes this credential from the owners of a site. Two-step: the first ' +
         'call returns a confirmation token, the second performs the removal.',
       inputSchema: z.object({ id: idSchema(), confirm_token: confirmToken }),
-      annotations: { destructiveHint: true, idempotentHint: false },
+      annotations: {
+        // Gives up ownership: every data call for the property starts
+        // returning 403 and the Indexing API stops working. Regaining it
+        // means placing the token again.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ id, confirm_token }, mcp) =>
       run(async () => {
@@ -295,7 +311,15 @@ export function registerVerificationTools(
       // Destructive, despite reading like an update. `owners` is the whole list
       // after the call, so a single well-formed argument removes every existing
       // owner — and this server cannot put them back.
-      annotations: { destructiveHint: true, idempotentHint: false },
+      annotations: {
+        // Replaces the owner list wholesale. Everyone not named loses access
+        // immediately, and this server cannot put them back — a removed owner
+        // has to verify again.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ id, owners, method, confirm_token }, mcp) =>
       run(async () => {

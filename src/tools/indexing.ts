@@ -8,6 +8,7 @@ import {
 } from '../result.js';
 
 import { assertUrlAllowed, webUrl } from '../schema.js';
+import { READ_ONLY } from './annotations.js';
 import type { ToolContext } from './context.js';
 
 /**
@@ -59,7 +60,7 @@ export function registerIndexingTools(
       inputSchema: z.object({
         url: webUrl.describe('The URL to look up the notification history for'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ url }) =>
       run(async () => {
@@ -96,7 +97,14 @@ export function registerIndexingTools(
               'actually returns 404 or 410 — Google checks.'
           ),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Asks Google to look at a URL. It adds a request to a queue and
+        // takes nothing away; asking twice asks for the same thing.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ url, type }) =>
       run(async () => {
