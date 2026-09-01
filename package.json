@@ -53,6 +53,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "google-auth-library": "^11.0.2",
+    "mcp-tool-allowlist": "^0.2.0",
     "zod": "^4.5.2"
   },
   "devDependencies": {

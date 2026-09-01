@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
-import { ToolFilterError } from './tool-filter.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
 
 const NAME = 'google-search-console-mcp';
 

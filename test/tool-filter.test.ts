@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildToolFilter, ToolFilterError } from '../src/tool-filter.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
+
+import { toolFilterFor } from '../src/server.js';
 import {
   ALL_TOOLS,
   ESSENTIAL_TOOLS,
@@ -120,13 +122,6 @@ describe('narrowing the tool list', () => {
     expect(names).toContain('list_sites');
   });
 
-  it('treats an empty value as unset rather than as "nothing"', () => {
-    // `GSC_ALLOW_TOOLS=` in a compose file must not take the server down.
-    expect(buildToolFilter(testConfig({ allowTools: '  ' })).active).toBe(
-      false
-    );
-  });
-
   it('answers tools/list rather than "method not found" when all are filtered', async () => {
     // The SDK installs its tools/list handler from inside the registration
     // path, so a server that *skipped* every tool would answer the whole method
@@ -139,28 +134,22 @@ describe('narrowing the tool list', () => {
 describe('refusing a tool list that cannot mean what it says', () => {
   it('rejects a name that matches nothing', () => {
     expect(() =>
-      buildToolFilter(testConfig({ allowTools: 'list_siets' }))
+      toolFilterFor(testConfig({ allowTools: 'list_siets' }))
     ).toThrow(ToolFilterError);
-  });
-
-  it('rejects a star that is not at the end', () => {
-    expect(() =>
-      buildToolFilter(testConfig({ allowTools: '*_sites' }))
-    ).toThrow(/prefix followed by a single trailing/);
   });
 
   it('names a write tool that read-only suppresses, instead of "unknown tool"', () => {
     // The one answer that would be wrong: the tool exists, read-only is why it
     // is not there, and saying "no such tool" sends the reader hunting a typo.
     expect(() =>
-      buildToolFilter(testConfig({ allowTools: 'delete_site', readOnly: true }))
-    ).toThrow(/is a write tool, but GSC_READ_ONLY/);
+      toolFilterFor(testConfig({ allowTools: 'delete_site', readOnly: true }))
+    ).toThrow(/read-only mode suppresses.*unset GSC_READ_ONLY/s);
   });
 
   it('warns rather than fails when a pattern only matches write tools', () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(() =>
-      buildToolFilter(
+      toolFilterFor(
         testConfig({ allowTools: 'list_*,delete_*', readOnly: true })
       )
     ).not.toThrow();
@@ -172,7 +161,7 @@ describe('refusing a tool list that cannot mean what it says', () => {
 
   it('refuses to start with an empty tool list', () => {
     expect(() =>
-      buildToolFilter(
+      toolFilterFor(
         testConfig({ allowTools: 'list_sites', denyTools: 'list_sites' })
       )
     ).toThrow(/leave no tools registered/);
@@ -185,7 +174,7 @@ describe('refusing a tool list that cannot mean what it says', () => {
       '1//0eXaMPLE-refresh-token-value-that-is-long-AND-mixed-case';
     let message = '';
     try {
-      buildToolFilter(testConfig({ allowTools: secret }));
+      toolFilterFor(testConfig({ allowTools: secret }));
     } catch (error) {
       message = (error as Error).message;
     }

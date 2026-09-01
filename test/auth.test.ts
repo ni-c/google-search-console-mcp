@@ -6,8 +6,8 @@ import {
   scopesFor,
   type Service,
 } from '../src/auth.js';
-import { registeredTools, servicesFor } from '../src/server.js';
-import { buildToolFilter } from '../src/tool-filter.js';
+import { registeredTools, servicesFor, toolFilterFor } from '../src/server.js';
+
 import { ALL_TOOLS, READ_TOOLS } from '../src/tools/catalogue.js';
 import { testConfig } from './harness.js';
 
@@ -63,7 +63,7 @@ describe('which scopes a given configuration ends up asking for', () => {
   ): string[] {
     const config = testConfig(overrides);
     return scopesFor(
-      servicesFor(registeredTools(config, buildToolFilter(config))),
+      servicesFor(registeredTools(config, toolFilterFor(config))),
       config.readOnly
     );
   }
@@ -98,16 +98,16 @@ describe('which scopes a given configuration ends up asking for', () => {
 describe('registeredTools', () => {
   it('is every tool with no filter', () => {
     const config = testConfig();
-    expect(registeredTools(config, buildToolFilter(config)).size).toBe(
+    expect(registeredTools(config, toolFilterFor(config)).size).toBe(
       ALL_TOOLS.length
     );
   });
 
   it('drops the write tools before the filter is applied', () => {
     const config = testConfig({ readOnly: true });
-    expect(
-      [...registeredTools(config, buildToolFilter(config))].sort()
-    ).toEqual([...READ_TOOLS].sort());
+    expect([...registeredTools(config, toolFilterFor(config))].sort()).toEqual(
+      [...READ_TOOLS].sort()
+    );
   });
 });
 
