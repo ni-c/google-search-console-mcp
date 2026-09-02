@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/%40ni-c%2Fgoogle-search-console-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fgoogle--search--console--mcp-blue)](https://github.com/ni-c/google-search-console-mcp/pkgs/container/google-search-console-mcp)
 [![docs](https://img.shields.io/badge/docs-google--search--console--mcp.ni--c.de-informational)](https://google-search-console-mcp.ni-c.de)
+[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
@@ -134,6 +135,10 @@ An ignored typo would otherwise leave a tool missing from `tools/list` with
 nothing pointing at the cause, and nobody traces an absence back to an
 environment variable.
 
+If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de) is
+the other answer — its `/hub` endpoint replaces every server's tools with six
+meta-tools.
+
 Narrowing the list also narrows the credential: the OAuth scopes this server
 requests are derived from the tools that are actually registered, so a server
 denied the Indexing tools never asks for the Indexing scope.
@@ -184,6 +189,38 @@ docker run --rm -i \
   -e GSC_SITE_URL=sc-domain:example.com \
   ghcr.io/ni-c/google-search-console-mcp
 ```
+
+### Through mcp-hub
+
+A client that cannot spawn a local process — ChatGPT connectors, Claude on the web,
+Cursor, LibreChat — reaches google-search-console-mcp through [mcp-hub](https://mcp-hub.ni-c.de): one
+container serves many stdio MCP servers over Streamable HTTP, with an OAuth 2.1 login
+behind a single password and long-lived tokens for the clients that cannot do OAuth. Its
+`/hub` endpoint puts every server behind six meta-tools, so one connector reaches all of
+them without N×tool schemas in the model's context, and it speaks both protocol revisions
+— a question this server asks travels through it to the person at the far end.
+
+Its `/config/mcp.json` uses Claude Code's format, so the entry is the one you already
+have:
+
+```json
+{
+  "mcpServers": {
+    "google-search-console": {
+      "command": "npx",
+      "args": ["-y", "@ni-c/google-search-console-mcp"],
+      "env": {
+        "GSC_SERVICE_ACCOUNT_KEY": "…",
+        "GSC_SITE_URL": "sc-domain:example.com"
+      }
+    }
+  }
+}
+```
+
+`allowTools` and `denyTools` there are the hub's **own** per-server filter, which is not
+the same thing as `*_ALLOW_TOOLS` in `env` — the difference, and the mistake it invites,
+are in the [client guide](https://google-search-console-mcp.ni-c.de/guide/clients#through-mcp-hub).
 
 ## Tools
 
@@ -283,6 +320,11 @@ after start-up, never sent to a redirect target, and a rejected value is
 described rather than echoed — including when it is a key pasted into
 `GSC_ALLOW_TOOLS` by mistake.
 
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[google-search-console-mcp.ni-c.de](https://google-search-console-mcp.ni-c.de)** (source in [`docs/`](docs/)).
+
 ## Development
 
 ```sh
@@ -305,3 +347,14 @@ git tag -s v0.1.0 -m 'v0.1.0' && git push origin main v0.1.0
 
 `release.yml` runs the suite, publishes to npm with provenance through a trusted
 publisher, pushes the multi-arch image to GHCR and updates the MCP registry entry.
+
+## Contributing
+
+Issues, discussions and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). For vulnerabilities please use
+[private reporting](https://github.com/ni-c/google-search-console-mcp/security/advisories/new)
+rather than a public issue; the policy is in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © Willi Thiel
