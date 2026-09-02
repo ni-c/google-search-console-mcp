@@ -28,6 +28,14 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     defaultSiteUrl: undefined,
     allowedSites: undefined,
     readOnly: false,
+    // Every field `Config` declares, written out rather than built from a
+    // partial. That is what makes `npm run typecheck` fail when a field is
+    // added and this literal is not — and it can only do that while the return
+    // type really is `Config`. Without it a missing field arrives as
+    // `undefined` at runtime, which for `elicitation` reads as *off*: the
+    // suites would have believed they were exercising the dialog while every
+    // test server took the token fallback.
+    elicitation: true,
     allowTools: undefined,
     denyTools: undefined,
     ...overrides,
