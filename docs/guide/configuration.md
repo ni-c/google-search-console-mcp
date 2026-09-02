@@ -72,6 +72,12 @@ exactly what `unverify_site` acts on.
 - the server requests the `webmasters.readonly` scope instead of `webmasters`, so
   a write is impossible below the tool layer rather than only above it.
 
+`1` and `yes` are read the same way as `true`, in any casing or padding — those
+are the spellings a compose file or a systemd unit reaches for, and a protection
+that fails off on the wrong word is worse than one that is a little tolerant.
+`ELICITATION` is the deliberate opposite: it is a permission, so only the exact
+word grants it.
+
 It does not narrow the Site Verification scope, because Google does not offer a
 read-only one — `siteverification.verify_only` is write-only and cannot list. If
 that matters, deny the verification tools as well and the scope goes away with

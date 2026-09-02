@@ -152,6 +152,25 @@ describe('the token source for each credential kind', () => {
     expect(fromFile.describe()).toContain('/keys/robot.json');
   });
 
+  it('refuses a service account with no key and no key file', () => {
+    /*
+     * The second lock on the door config.ts bolts. google-auth-library reads
+     * `opts.keyFilename || opts.keyFile`, so `keyFile: ''` is not a path that
+     * does not exist — it is no path at all, and the library falls through to
+     * application default credentials. Nothing downstream would report that:
+     * the server keeps working, from a different identity than the one it
+     * printed at startup.
+     */
+    for (const keyFile of ['', '   ', undefined]) {
+      expect(() =>
+        createTokenSource(
+          { mode: 'service-account', key: undefined, keyFile },
+          []
+        )
+      ).toThrow(/application default credentials/);
+    }
+  });
+
   it('describes an OAuth credential without its secret', () => {
     const source = createTokenSource(
       {

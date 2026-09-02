@@ -93,7 +93,7 @@ registries and sandbox inspectors can introspect it.
 | `GOOGLE_APPLICATION_CREDENTIALS` | Application default credentials, used when no `GSC_` credential is set                                         |
 | `GSC_SITE_URL`                   | Default property, e.g. `sc-domain:example.com` or `https://example.com/`. Makes `site_url` optional everywhere |
 | `GSC_ALLOWED_SITES`              | Comma-separated properties this server may touch at all; anything else is refused                              |
-| `GSC_READ_ONLY`                  | `true` registers only the twelve read tools                                                                    |
+| `GSC_READ_ONLY`                  | `true` (or `1`/`yes`) registers only the twelve read tools                                                     |
 | `GSC_ALLOW_TOOLS`                | Comma-separated tool names, a `list_*` prefix, or `essential`                                                  |
 | `GSC_DENY_TOOLS`                 | Same shape, subtracted from whatever the allow list left                                                       |
 | `ELICITATION`                    | `false` replaces the approval dialog with the two-call token. **Not prefixed**                                 |

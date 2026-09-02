@@ -28,7 +28,7 @@ export const MAX_RESULT_BYTES = 100_000;
  * averages roughly three bytes per counted unit, so a character budget lets
  * through three times what it promises.
  */
-function byteLength(text: string): number {
+export function byteLength(text: string): number {
   return Buffer.byteLength(text, 'utf8');
 }
 
@@ -120,6 +120,30 @@ const LONG_STRING = 200;
 /** The placeholder a shortened array ends with, and how to read its count back. */
 const OMITTED_ENTRIES = /^… \((\d+) more entries omitted\)$/;
 
+/**
+ * The mark a shortened *string* carries, and the reason it has to be read back.
+ *
+ * Load-bearing, not cosmetic. The replacement is the first 200 characters plus
+ * this note, which is itself about thirty characters — so shortening a string of
+ * 230 characters produces a string of 230 characters, and a shortener that only
+ * compares lengths offers the identical value again on the next pass, forever.
+ * `budgetedJson` would then spin on a full core and the whole server stops
+ * answering, because Node is single-threaded: not just this tool, all of them.
+ * Excluding already-marked strings is what lets the loop run out of candidates
+ * and reach the honest give-up below.
+ */
+const OMITTED_CHARACTERS = /… \(\d+ more characters omitted\)$/;
+
+/**
+ * Ceiling on how many shrinking rounds {@link budgetedJson} may take.
+ *
+ * The loop is supposed to end on its own, and it already failed to do that
+ * once — which is the whole argument for a ceiling that does not depend on
+ * getting the termination proof right a second time. Reaching it is not an
+ * error; it falls into the same give-up result as running out of things to cut.
+ */
+const MAX_SHRINK_ROUNDS = 1000;
+
 /** Rough serialized size of an array, without serializing all of it. */
 function estimateArrayBytes(value: unknown[]): number {
   const sample = value[0];
@@ -140,7 +164,9 @@ function estimateArrayBytes(value: unknown[]): number {
  * Each cut is marked in place, and an already-marked array is folded back into a
  * single running count when it is cut again — otherwise the marker itself would
  * make the array look one entry longer every pass and the loop would never
- * finish.
+ * finish. An already-marked *string* is skipped entirely rather than folded, for
+ * the reason spelled out at {@link OMITTED_CHARACTERS}: shortening it a second
+ * time cannot make it shorter.
  *
  * Returns false when nothing is left worth shortening.
  */
@@ -173,7 +199,7 @@ function shortenLargest(node: unknown): boolean {
     const record = value as Record<string, unknown>;
     for (const [key, child] of Object.entries(record)) {
       if (typeof child === 'string') {
-        if (child.length > LONG_STRING) {
+        if (child.length > LONG_STRING && !OMITTED_CHARACTERS.test(child)) {
           consider(child.length, () => {
             record[key] =
               `${child.slice(0, LONG_STRING)}… (${child.length - LONG_STRING} more characters omitted)`;
@@ -205,7 +231,8 @@ export function budgetedJson(data: unknown): string {
   if (byteLength(rendered) <= MAX_RESULT_BYTES) return rendered;
 
   const copy = structuredClone(data);
-  while (shortenLargest(copy)) {
+  for (let round = 0; round < MAX_SHRINK_ROUNDS; round++) {
+    if (!shortenLargest(copy)) break;
     rendered = JSON.stringify(copy, null, 2);
     if (byteLength(rendered) <= MAX_RESULT_BYTES) return rendered;
   }

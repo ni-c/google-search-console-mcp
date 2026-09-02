@@ -156,6 +156,104 @@ describe('choosing a credential', () => {
     );
   });
 
+  it('refuses an empty key file rather than falling back to ADC', () => {
+    /*
+     * The compose shape that produces this on its own:
+     * `GSC_SERVICE_ACCOUNT_KEY_FILE=${GSC_KEY_FILE}` with GSC_KEY_FILE unset.
+     * Docker Compose substitutes the empty string, it does not drop the
+     * variable — so this is not a typo somebody has to make.
+     *
+     * `{ keyFile: '' }` is falsy to google-auth-library, which then looks for
+     * application default credentials: on a developer workstation, an account
+     * that usually sees every property in the organisation. The server started
+     * without a word and its startup line said "service-account".
+     */
+    expectExit(
+      { GSC_SERVICE_ACCOUNT_KEY_FILE: '' },
+      /GSC_SERVICE_ACCOUNT_KEY_FILE is set but empty/
+    );
+    expectExit({ GSC_SERVICE_ACCOUNT_KEY_FILE: '   ' }, /ambient credentials/);
+  });
+
+  it('refuses an empty inline key for the same reason', () => {
+    // This one already failed, through JSON.parse in decodeKey — but with a
+    // message about JSON, which describes the symptom rather than the mistake.
+    // The asymmetry between the two variables is what hid the key-file case.
+    expectExit(
+      { GSC_SERVICE_ACCOUNT_KEY: '' },
+      /GSC_SERVICE_ACCOUNT_KEY is set but empty/
+    );
+  });
+
+  it('does not let an empty key file quietly outrank a complete OAuth triple', () => {
+    // The worst shape of the same bug: a fully configured OAuth credential is
+    // present, and the empty key file used to win — sending the server to ADC
+    // while the credential the operator actually set went unused.
+    expectExit(
+      {
+        GSC_SERVICE_ACCOUNT_KEY_FILE: '',
+        GSC_CLIENT_ID: 'id',
+        GSC_CLIENT_SECRET: 'secret',
+        GSC_REFRESH_TOKEN: 'refresh',
+      },
+      /GSC_SERVICE_ACCOUNT_KEY_FILE is set but empty/
+    );
+  });
+
+  it('trims a key file path that arrived with whitespace', () => {
+    const config = loadConfig({
+      GSC_SERVICE_ACCOUNT_KEY_FILE: ' /keys/robot.json\n',
+    });
+    expect(config.auth).toMatchObject({
+      mode: 'service-account',
+      keyFile: '/keys/robot.json',
+    });
+  });
+
+  it('refuses a service account and an OAuth credential at once', () => {
+    // Two named identities is the same ambiguity as two service account keys,
+    // and silently preferring one leaves the operator with no error, no change
+    // in behaviour, and no way to tell which identity answered.
+    expectExit(
+      {
+        GSC_SERVICE_ACCOUNT_KEY_FILE: '/keys/robot.json',
+        GSC_CLIENT_ID: 'id',
+        GSC_CLIENT_SECRET: 'secret',
+        GSC_REFRESH_TOKEN: 'refresh',
+      },
+      /GSC_CLIENT_ID, GSC_CLIENT_SECRET, GSC_REFRESH_TOKEN/
+    );
+  });
+
+  it('still allows ambient credentials alongside a service account', () => {
+    // GOOGLE_APPLICATION_CREDENTIALS is set on half the machines this can run
+    // on and nobody set it for this server. Ambient is exactly what the
+    // ordering here is allowed to override; another *named* identity is not.
+    const config = loadConfig({
+      GSC_SERVICE_ACCOUNT_KEY_FILE: '/keys/robot.json',
+      GOOGLE_APPLICATION_CREDENTIALS: '/other.json',
+    });
+    expect(config.auth).toMatchObject({ mode: 'service-account' });
+  });
+
+  it('reads GSC_READ_ONLY the way a compose file spells it', () => {
+    /*
+     * A protection, not a permission, so this one is read tolerantly — the
+     * mirror image of ELICITATION above, which is fatal on anything it does not
+     * know. `=1` is what a Docker Compose file or a systemd unit is most likely
+     * to say, and under an exact `=== 'true'` that spelling left every write
+     * tool registered while the operator believed the server could not write.
+     */
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const raw of ['true', 'TRUE', ' True ', '1', 'yes', 'YES']) {
+      expect(loadConfig({ GSC_READ_ONLY: raw }).readOnly, raw).toBe(true);
+    }
+    for (const raw of ['', 'false', '0', 'no', 'off']) {
+      expect(loadConfig({ GSC_READ_ONLY: raw }).readOnly, raw).toBe(false);
+    }
+    warn.mockRestore();
+  });
+
   it('refuses two service account sources at once', () => {
     expectExit(
       {

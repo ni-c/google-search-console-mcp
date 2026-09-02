@@ -38,7 +38,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A `docs/guide/approval.md` page.
 
+### Fixed
+
+- **An empty `GSC_SERVICE_ACCOUNT_KEY_FILE` no longer falls back to application
+  default credentials.** A variable that is set but empty is now a startup
+  error, like every other malformed credential here.
+
+  It is not a spelling anybody has to type: `GSC_SERVICE_ACCOUNT_KEY_FILE=${GSC_KEY_FILE}`
+  in a compose file with `GSC_KEY_FILE` unset substitutes the empty string
+  rather than dropping the variable. An empty path reached google-auth-library
+  as `{ keyFile: '' }`, which is falsy there and therefore ignored — so the
+  library searched for application default credentials and the server ran as
+  whatever the machine is logged into, while its startup line said
+  `service-account`. On a developer workstation that is usually an account that
+  can see every property in the organisation. A complete OAuth2 credential set
+  at the same time was discarded in favour of it.
+
+  Two further changes come with it. A service account key and OAuth2 variables
+  set together are now a startup error instead of the OAuth ones being ignored
+  in silence — two named identities is the same ambiguity as two service account
+  keys, and the answer is the same. And `createTokenSource` refuses a
+  service-account credential with no key and no key file, so the fallback cannot
+  be reached even if a future caller builds that shape another way.
+
+- **`budgetedJson` no longer spins on strings it cannot shorten.** The
+  replacement for an over-long string is its first 200 characters plus a
+  ~30-character marker, so a string of exactly 230 characters was replaced by a
+  string of 230 characters and offered again on the next pass, forever. On a
+  single-threaded runtime that stops the whole server, not just the call.
+  Already-shortened strings are now excluded from later passes, and both
+  shrinking loops have a round ceiling that ends in the same honest give-up as
+  running out of things to cut.
+
+- **`query_search_analytics` is held to the result budget it is the reason
+  for.** `MAX_RESULT_BYTES` is documented as existing because of this tool, and
+  it was the one tool that never measured itself against it: the row cap bounds
+  how many rows a table has, and nothing bounded how wide one is. `page` and
+  `query` dimension values are arbitrary length, so a page-by-query breakdown on
+  a property with facet navigation returned several times the budget in one
+  result. Rows are now dropped whole until the table fits, naming what was
+  dropped and the `start_row` that fetches it, and a single cell is capped at
+  200 characters.
+
 ### Changed
+
+- `GSC_READ_ONLY` now also accepts `1` and `yes`, in any casing or padding —
+  the spellings a compose file or a systemd unit is most likely to use. Under
+  the previous exact match on `true` they left every write tool registered while
+  the operator believed the server could not write. Deliberately more tolerant
+  than `ELICITATION`, which is fatal on anything it does not recognise: this one
+  is a protection, that one is a permission.
 
 - Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
   always did; the change is the package layout behind it, and it is what lets

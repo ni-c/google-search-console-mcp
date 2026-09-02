@@ -144,6 +144,38 @@ describe('budgetedJson', () => {
     });
   });
 
+  it('terminates on strings the shortening cannot make shorter', () => {
+    /*
+     * The replacement is 200 characters plus a marker of about thirty, so
+     * shortening a 230-character string produces a 230-character string. A
+     * shortener that only compares lengths therefore offers the same field
+     * again on every pass and the loop never ends — on a single-threaded
+     * runtime that is the whole server, not just this call.
+     *
+     * Six hundred fields of exactly that length, so no single one can be cut
+     * into budget and the pass genuinely runs out of candidates.
+     *
+     * This asserts the guarantee rather than one of its two locks: with neither
+     * the marker check nor the round ceiling it does not fail, it hangs the
+     * whole run — a synchronous loop is not something a test timeout can
+     * interrupt. Either lock on its own brings it back to a normal assertion.
+     */
+    const pathological: Record<string, string> = {};
+    for (let index = 0; index < 600; index += 1) {
+      pathological[`field${index}`] = 'x'.repeat(230);
+    }
+
+    const started = Date.now();
+    const rendered = budgetedJson(pathological);
+    expect(Date.now() - started).toBeLessThan(5000);
+
+    // It cannot reach the budget by shortening alone — 600 fields of 230
+    // characters stay over 100 kB — so the honest give-up is the right answer.
+    expect(JSON.parse(rendered)).toMatchObject({
+      error: expect.stringContaining('exceeds the result size budget'),
+    });
+  }, 15_000);
+
   it('gives up honestly when nothing in it can be shortened', () => {
     // Thousands of short keys: no long string, no list, and keys are not
     // something this may rewrite. There is genuinely nothing to cut, and the

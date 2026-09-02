@@ -97,3 +97,33 @@ saying it is off.
 `update_site_owners` belongs in that list despite reading like an update: the
 list it takes is the complete owner list afterwards, so one well-formed call
 removes everyone else and nothing here can put them back.
+
+### What a confirmation proves, and what it does not
+
+A confirmation binds an answer to an operation. It does not prove the answer was
+given just now, and it does not prove it was given only once.
+
+`mcp-approval` seals the state it hands out with an HMAC over the resource key —
+here `tupleResourceKey`, which fingerprints the tool name and the exact targets
+in order. A state that will not open, or opens onto a different operation, counts
+as no answer at all. So a confirmation for `delete_site` on one property cannot
+authorise it on another, and the two-call `confirm_token` fallback is bound the
+same way. What neither carries is a timestamp or a single-use marker: nothing
+here records which confirmations have already been spent, so the same sealed
+state, presented twice, is honoured twice.
+
+That is a gap in the mechanism rather than a hole in this server today, for two
+reasons that both have to hold. The sealed state only travels over the wire on
+protocol revision `2026-07-28`; on `2025-11-25`, the revision clients actually
+speak, the SDK completes the elicitation exchange inside this process and the
+state is never exposed to anything that could keep it. And the signing key is 32
+random bytes per process — a stdio server is spawned per session, so a state
+cannot outlive the session it was issued in even if it were exposed.
+
+The day a client offers `2026-07-28`, this needs a spent-confirmation record:
+each honoured state noted by its resource key and a nonce carried inside it,
+dropped as it is spent, and expired after a few minutes so an abandoned dialog
+does not accumulate. It is deliberately not built ahead of that day. An unused
+one is a second source of truth about what has been approved, and a replay cache
+written against a protocol revision nobody has spoken yet is a replay cache
+written against a guess.
