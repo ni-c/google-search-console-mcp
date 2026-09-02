@@ -44,7 +44,7 @@ describe('verify_site', () => {
     expect(stub.calls[0]?.body).toEqual({
       site: { type: 'INET_DOMAIN', identifier: 'example.com' },
     });
-    expect(textOf(result)).toContain('is verified');
+    expect(result.structuredContent).toMatchObject({ verified: true });
     expect(textOf(result)).toContain('owner@example.com');
   });
 

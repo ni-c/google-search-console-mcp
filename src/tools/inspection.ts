@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { record, truncationNote, untrustedFields } from '../output-schema.js';
 
 import { GoogleApiError } from '../api.js';
 import { READ_ONLY } from './annotations.js';
@@ -58,6 +59,12 @@ export function registerInspectionTools(
           ),
       }),
       annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          inspectionResult: record.optional(),
+        })
+        .catchall(z.unknown()),
     },
     ({ site_url, inspection_url, language_code }) =>
       run(async () => {
@@ -92,6 +99,13 @@ export function registerInspectionTools(
           .describe('BCP-47 code for the language of the issue messages'),
       }),
       annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          results: z.array(record),
+        })
+        .catchall(z.unknown()),
     },
     ({ site_url, inspection_urls, language_code }) =>
       run(async () => {

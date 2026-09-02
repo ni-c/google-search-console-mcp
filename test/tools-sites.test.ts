@@ -123,7 +123,10 @@ describe('add_site', () => {
     const result = await call(await connect(), 'add_site', {
       site_url: 'sc-domain:new.test',
     });
-    expect(textOf(result)).toContain('was added to Search Console');
+    // It answers with fields now, not a sentence — the sentence was what a
+    // caller had to parse to find out whether the property was created.
+    expect(result.structuredContent).toMatchObject({ added: true });
+    expect(textOf(result)).toContain('not verified yet');
     expect(textOf(result)).toContain('not verified yet');
   });
 
@@ -157,7 +160,7 @@ describe('delete_site', () => {
     expect(client.prompts).toHaveLength(1);
     expect(client.prompts[0]).toContain('16 months');
     expect(stub.calls).toHaveLength(1);
-    expect(textOf(result)).toContain('was removed');
+    expect(result.structuredContent).toMatchObject({ removed: true });
   });
 
   it('removes nothing when the user declines', async () => {
@@ -211,7 +214,7 @@ describe('delete_site', () => {
       confirm_token: tokenOf(first),
     });
     expect(stub.calls).toHaveLength(1);
-    expect(textOf(second)).toContain('was removed');
+    expect(second.structuredContent).toMatchObject({ removed: true });
   });
 
   it('will not accept a token issued for a different property', async () => {

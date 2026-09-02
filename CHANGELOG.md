@@ -16,6 +16,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result —
+  which six of them made unavoidable, since they answered with a sentence. The
+  sentence stays, in the text block, and so does `query_search_analytics`'
+  rendered table: the rows themselves are now in the structured half.
+
+  Every tool that reports Google's data carries `untrusted: true` and
+  `source: "search-console"` as fields, not only as a preamble in the text. A
+  search query is a string a member of the public typed into Google and a page
+  title comes from the crawled site, so a client that reads the structured half
+  must not get either unframed. Six tools are without the marker: their answer
+  is a property this server was given and a fact it established.
+
+### Changed
+
+- A result too large to shorten is now an error rather than an envelope saying
+  so. The envelope was a different shape from what the tool declares it
+  returns, which the SDK refuses.
+
+- The two-call `confirm_token` prompt is an error result. What was asked for did
+  not happen, which is what `isError` says. The text is unchanged and still
+  carries the token.
+
+## [Unreleased]
+
+### Added
+
 - Tools that need a confirmation now **ask the user**, on clients that can show
   a prompt. The two-call `confirm_token` remains for clients that cannot, so
   nothing that works today stops working — but where a person can be asked, one

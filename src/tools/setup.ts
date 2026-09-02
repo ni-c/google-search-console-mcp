@@ -6,11 +6,12 @@ import {
   type VerificationSite,
 } from '../site-identity.js';
 import { z } from 'zod';
+import { untrustedFields } from '../output-schema.js';
 
 import { GoogleApiError } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { listField, objectOf } from '../normalize.js';
-import { run, untrustedResult } from '../result.js';
+import { run, untrustedTextResult } from '../result.js';
 import { resolveSite, siteUrlSchema } from '../schema.js';
 import type { ToolContext } from './context.js';
 import { listSiteUrls } from './sites.js';
@@ -98,6 +99,16 @@ export function registerSetupTools(
         'nothing.',
       inputSchema: z.object({ site_url: siteUrlSchema(config) }),
       annotations: READ_ONLY,
+      // The numbered steps stay in the text block; the verdicts go here.
+      outputSchema: z.object({
+        ...untrustedFields,
+        site: z.string(),
+        stage: z.string().describe('Where this property is in the setup.'),
+        exists: z.boolean(),
+        owned: z.boolean(),
+        permissionLevel: z.string().nullable(),
+        steps: z.array(z.string()),
+      }),
     },
     ({ site_url }) =>
       run(async () => {
@@ -173,7 +184,14 @@ export function registerSetupTools(
         // steps around them are this server's own text, but the marker covers
         // the whole block rather than pretending the two can be told apart by
         // eye.
-        return untrustedResult(lines.join('\n'));
+        return untrustedTextResult(lines.join('\n'), {
+          site,
+          stage: state.stage,
+          exists: state.exists,
+          owned: state.owned,
+          permissionLevel: state.permissionLevel ?? null,
+          steps: lines,
+        });
       })
   );
 }

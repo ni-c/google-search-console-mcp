@@ -1,10 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { record, truncationNote, untrustedFields } from '../output-schema.js';
 import {
   budgetedList,
   budgetedUntrustedResult,
   run,
-  textResult,
+  structuredResult,
 } from '../result.js';
 
 import { GoogleApiError, pathSegment } from '../api.js';
@@ -64,6 +65,13 @@ export function registerSitemapTools(
           ),
       }),
       annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          sitemaps: z.array(record),
+        })
+        .catchall(z.unknown()),
     },
     ({ site_url, sitemap_index }) =>
       run(async () => {
@@ -106,6 +114,7 @@ export function registerSitemapTools(
         ),
       }),
       annotations: READ_ONLY,
+      outputSchema: record.extend(untrustedFields),
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -143,6 +152,12 @@ export function registerSitemapTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        site: z.string(),
+        feedpath: z.string(),
+        submitted: z.literal(true),
+        note: z.string(),
+      }),
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -155,12 +170,15 @@ export function registerSitemapTools(
           undefined,
           { retryable: true }
         );
-        return textResult(
-          `Submitted ${feedpath} for ${site}.\n\n` +
+        return structuredResult({
+          site,
+          feedpath,
+          submitted: true,
+          note:
             'Google has accepted the address; it has not fetched the file yet. ' +
             'Call get_sitemap in a few minutes to see lastDownloaded, the URL ' +
-            'counts, and any warnings or errors.'
-        );
+            'counts, and any warnings or errors.',
+        });
       })
   );
 
@@ -190,6 +208,12 @@ export function registerSitemapTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z
+        .object({
+          truncated: truncationNote,
+          results: z.array(record),
+        })
+        .catchall(z.unknown()),
     },
     ({ site_url, feedpaths }) =>
       run(async () => {
@@ -255,6 +279,11 @@ export function registerSitemapTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        site: z.string(),
+        feedpath: z.string(),
+        removed: z.literal(true),
+      }),
     },
     ({ site_url, feedpath, confirm_token }, mcp) =>
       run(async () => {
@@ -283,7 +312,7 @@ export function registerSitemapTools(
           },
           async () => {
             await api.delete('search-console', sitemapsPath(site, feedpath));
-            return textResult(`Removed ${feedpath} from ${site}.`);
+            return structuredResult({ site, feedpath, removed: true });
           }
         );
       })

@@ -3,7 +3,7 @@ import {
   budgetedList,
   budgetedUntrustedResult,
   run,
-  textResult,
+  structuredResult,
 } from '../result.js';
 import {
   allowsSite,
@@ -12,6 +12,7 @@ import {
   siteUrlSchema,
 } from '../schema.js';
 import { z } from 'zod';
+import { record, truncationNote, untrustedFields } from '../output-schema.js';
 
 import { pathSegment } from '../api.js';
 import { READ_ONLY } from './annotations.js';
@@ -55,6 +56,13 @@ export function registerSiteTools(
         PERMISSION_NOTE,
       inputSchema: z.object({}),
       annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          sites: z.array(record),
+        })
+        .catchall(z.unknown()),
     },
     () =>
       run(async () => {
@@ -103,6 +111,7 @@ export function registerSiteTools(
         'properties holding separate data.',
       inputSchema: z.object({ site_url: siteUrlSchema(config) }),
       annotations: READ_ONLY,
+      outputSchema: record.extend(untrustedFields),
     },
     ({ site_url }) =>
       run(async () => {
@@ -146,6 +155,11 @@ export function registerSiteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        site: z.string(),
+        added: z.literal(true),
+        note: z.string(),
+      }),
     },
     ({ site_url }) =>
       run(async () => {
@@ -157,13 +171,15 @@ export function registerSiteTools(
         }
         const site = resolveSite(config, site_url);
         await api.put('search-console', `${SITES}/${pathSegment(site)}`);
-        return textResult(
-          `${site} was added to Search Console.\n\n` +
+        return structuredResult({
+          site,
+          added: true,
+          note:
             'It is not verified yet unless this credential already owned the ' +
             'domain. Run get_site to see the permission level: anything other ' +
             'than siteOwner or siteFullUser means data calls will return 403. ' +
-            'setup_site says what is still missing.'
-        );
+            'setup_site says what is still missing.',
+        });
       })
   );
 
@@ -187,6 +203,7 @@ export function registerSiteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({ site: z.string(), removed: z.literal(true) }),
     },
     ({ site_url, confirm_token }, mcp) =>
       run(async () => {
@@ -210,7 +227,7 @@ export function registerSiteTools(
           },
           async () => {
             await api.delete('search-console', `${SITES}/${pathSegment(site)}`);
-            return textResult(`${site} was removed from Search Console.`);
+            return structuredResult({ site, removed: true });
           }
         );
       })

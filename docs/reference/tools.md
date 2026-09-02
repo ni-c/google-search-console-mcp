@@ -13,6 +13,14 @@ dialog the model cannot answer on its behalf. Where the client cannot show one
 they fall back to a two-call `confirm_token`, and `ELICITATION=false` takes that
 fallback deliberately. See [Asking a person](/guide/approval).
 
+Every tool declares an `outputSchema` and answers with `structuredContent`
+beside the text block, so a client can use a result without parsing prose. Every
+tool that reports Google's data carries `untrusted: true` and
+`source: "search-console"` as fields of that object — a search query is a string
+a member of the public typed into Google. Six tools are without the marker,
+because their answer is a property this server was given and a fact it
+established.
+
 Every tool declares all four MCP annotations — `readOnlyHint`,
 `destructiveHint`, `idempotentHint`, `openWorldHint`.
 

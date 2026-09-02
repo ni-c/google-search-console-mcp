@@ -1,12 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { record, untrustedFields } from '../output-schema.js';
 
 import { renderAnalytics, type AnalyticsResponse } from '../analytics.js';
 import { READ_ONLY } from './annotations.js';
 import { pathSegment } from '../api.js';
 import { PERIODS, resolveDateRange } from '../dates.js';
 import { objectOf } from '../normalize.js';
-import { run, untrustedResult } from '../result.js';
+import { run, untrustedTextResult } from '../result.js';
 import { isoDate, resolveSite, siteUrlSchema } from '../schema.js';
 import type { ToolContext } from './context.js';
 
@@ -151,6 +152,22 @@ export function registerAnalyticsTools(
           .describe('Zero-based offset for paging. Defaults to 0.'),
       }),
       annotations: READ_ONLY,
+      // The rendered table stays in the text block — it is the readable
+      // presentation of these same rows — and the rows go here, where a caller
+      // can use them without parsing it.
+      outputSchema: z.object({
+        ...untrustedFields,
+        site: z.string(),
+        dimensions: z.array(z.string()),
+        startDate: z.string(),
+        endDate: z.string(),
+        rowLimit: z.number().int(),
+        startRow: z.number().int(),
+        rowCount: z.number().int(),
+        rows: z
+          .array(record)
+          .describe('keys[] plus clicks, impressions, ctr and position.'),
+      }),
     },
     (args) =>
       run(async () => {
@@ -212,16 +229,27 @@ export function registerAnalyticsTools(
           'search analytics response'
         ) as AnalyticsResponse;
 
-        return untrustedResult(
-          renderAnalytics(response, {
-            dimensions: [...dimensions],
-            startDate,
-            endDate,
-            site,
-            rowLimit,
-            startRow,
-          })
-        );
+        // The rendered table stays in the text block — it is the readable
+        // presentation of the same rows — and the rows themselves go in the
+        // structured half, where a caller can use them without parsing it.
+        const rendered = renderAnalytics(response, {
+          dimensions: [...dimensions],
+          startDate,
+          endDate,
+          site,
+          rowLimit,
+          startRow,
+        });
+        return untrustedTextResult(rendered, {
+          site,
+          dimensions: [...dimensions],
+          startDate,
+          endDate,
+          rowLimit,
+          startRow,
+          rows: response.rows ?? [],
+          rowCount: (response.rows ?? []).length,
+        });
       })
   );
 }

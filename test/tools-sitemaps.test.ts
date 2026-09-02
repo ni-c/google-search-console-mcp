@@ -66,7 +66,7 @@ describe('submit_sitemap', () => {
     );
     expect(stub.calls[0]?.method).toBe('PUT');
     expect(stub.calls[0]?.path).toBe(`${BASE}/${FEED_ENCODED}`);
-    expect(textOf(result)).toContain('Submitted');
+    expect(result.structuredContent).toMatchObject({ submitted: true });
   });
 
   it('says acceptance is not validation', async () => {
@@ -177,7 +177,7 @@ describe('delete_sitemap', () => {
       confirm_token: tokenOf(first),
     });
     expect(stub.calls).toHaveLength(1);
-    expect(textOf(second)).toContain('Removed');
+    expect(second.structuredContent).toMatchObject({ removed: true });
   });
 });
 

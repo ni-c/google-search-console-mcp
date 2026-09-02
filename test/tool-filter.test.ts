@@ -60,6 +60,51 @@ describe('the catalogue and the server agree', () => {
     }
   });
 
+  it('declares an output schema on every tool', async () => {
+    // The same argument as the annotations below, one field along. A tool that
+    // says nothing about its result forces a client to parse prose to find out
+    // what it got, and the SDK sends no `structuredContent` at all for a tool
+    // that declared no schema — six tools here answered with a sentence.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.outputSchema, tool.name).toBeDefined();
+      // An object root, not merely a schema. SEP-2106 allows an array or a
+      // scalar, but a 2025-era client is served that same tool with the schema
+      // rewritten to `{result: …}` — so it would answer in two shapes
+      // depending on who asked.
+      expect(tool.outputSchema?.type, tool.name).toBe('object');
+    }
+  });
+
+  it('marks every result built from Google’s data as untrusted', async () => {
+    // "It is only search data" is exactly the wrong intuition: a search query
+    // is a string a member of the public typed into Google, and a page title
+    // comes from the crawled site. A client that reads only
+    // `structuredContent` must not get either unframed.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const plain = tools
+      .filter((tool) => {
+        const properties = tool.outputSchema?.properties as
+          Record<string, unknown> | undefined;
+        return properties?.untrusted === undefined;
+      })
+      .map((tool) => tool.name)
+      .sort();
+    // The six whose answer is a property this server was given and a fact it
+    // established. A marker on those would make the marker mean nothing.
+    expect(plain).toEqual([
+      'add_site',
+      'delete_site',
+      'delete_sitemap',
+      'submit_sitemap',
+      'submit_sitemaps',
+      'unverify_site',
+    ]);
+  });
+
   it('declares all four annotation hints on every tool', async () => {
     // Not a style rule. Two of the four default to a *stronger* claim than
     // silence suggests: the specification gives destructiveHint and

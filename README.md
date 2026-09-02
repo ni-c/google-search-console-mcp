@@ -189,6 +189,20 @@ docker run --rm -i \
 
 `site_url` is optional on every tool that takes it when `GSC_SITE_URL` is set.
 
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose.
+`query_search_analytics` keeps its rendered table in the text block and puts the
+rows themselves in the structured half; six tools that answered with a sentence
+now answer with fields too.
+
+Every tool that reports Google's data carries `untrusted: true` and
+`source: "search-console"` as fields. _"It is only search data"_ is exactly the
+wrong intuition: a search query is a string a member of the public typed into
+Google, and a page title comes from the crawled site. Six tools are without the
+marker, because their answer is a property this server was given and a fact it
+established: `add_site`, `delete_site`, `submit_sitemap`, `submit_sitemaps`,
+`delete_sitemap` and `unverify_site`.
+
 ### Properties and ownership
 
 | Tool                     | What it does                                                                                                           |

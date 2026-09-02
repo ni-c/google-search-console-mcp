@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { record, untrustedFields } from '../output-schema.js';
 import {
-  budgetedJson,
+  budget,
   budgetedUntrustedResult,
   run,
   untrustedResult,
@@ -61,6 +62,14 @@ export function registerIndexingTools(
         url: webUrl.describe('The URL to look up the notification history for'),
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        url: z.string().optional(),
+        notification: record.optional(),
+        latestUpdate: record.optional(),
+        latestRemove: record.optional(),
+        note: z.string().optional(),
+      }),
     },
     ({ url }) =>
       run(async () => {
@@ -105,6 +114,14 @@ export function registerIndexingTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: z.object({
+        ...untrustedFields,
+        url: z.string(),
+        type: z.enum(['URL_UPDATED', 'URL_DELETED']),
+        accepted: z.literal(true).describe('Accepted is not acted upon.'),
+        note: z.string(),
+        notification: record,
+      }),
     },
     ({ url, type }) =>
       run(async () => {
@@ -117,12 +134,13 @@ export function registerIndexingTools(
             type: type ?? 'URL_UPDATED',
           }
         );
-        return untrustedResult(
-          `Notification accepted for ${url} (${type ?? 'URL_UPDATED'}).\n\n` +
-            `${budgetedJson(result)}\n\n` +
-            'Accepted is not acted upon. ' +
-            SCOPE_WARNING
-        );
+        return untrustedResult({
+          url,
+          type: type ?? 'URL_UPDATED',
+          accepted: true,
+          note: 'Accepted is not acted upon. ' + SCOPE_WARNING,
+          notification: budget(result),
+        });
       })
   );
 }
