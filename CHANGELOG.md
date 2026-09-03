@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.2.0] - 2026-09-03
 
 ### Added
 
@@ -28,6 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   title comes from the crawled site, so a client that reads the structured half
   must not get either unframed. Six tools are without the marker: their answer
   is a property this server was given and a fact it established.
+
+- Tools that need a confirmation now **ask the user**, on clients that can show
+  a prompt. The two-call `confirm_token` remains for clients that cannot, so
+  nothing that works today stops working — but where a person can be asked, one
+  is, instead of a token that only proves the same call was made twice.
+
+- `ELICITATION` switches the dialog off — `false` sends a client that could have
+  been asked down the two-call-token path instead. For a scheduled job or a test
+  harness, where a dialog is the wrong shape rather than an unwanted one.
+
+  It does **not** remove the guard: there is no setting in which a guarded call
+  goes unannounced. Two deliberate rough edges come with it. The variable is
+  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
+  the environment — which is why a server started with it off prints a line
+  saying so, and why the fallback text names the server instead of blaming a
+  client that was working fine. And a value that is neither `true` nor `false`
+  **stops the server**: it is the only variable here that defaults to _on_, so
+  failing open on a typo would leave the dialog running while the operator
+  believed it was off. It is read after the credentials are wiped from the
+  environment, so that exit cannot leave them behind.
+
+- A `docs/guide/approval.md` page.
 
 ### Changed
 
@@ -58,29 +80,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+- `GSC_READ_ONLY` now also accepts `1` and `yes`, in any casing or padding —
+  the spellings a compose file or a systemd unit is most likely to use. Under
+  the previous exact match on `true` they left every write tool registered while
+  the operator believed the server could not write. Deliberately more tolerant
+  than `ELICITATION`, which is fatal on anything it does not recognise: this one
+  is a protection, that one is a permission.
 
-- Tools that need a confirmation now **ask the user**, on clients that can show
-  a prompt. The two-call `confirm_token` remains for clients that cannot, so
-  nothing that works today stops working — but where a person can be asked, one
-  is, instead of a token that only proves the same call was made twice.
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it, and it is what lets
+  the dialog above work on both protocol eras from one code path — including
+  behind a stateless gateway, where the older mechanism silently fell back to
+  the weaker token for every client.
 
-- `ELICITATION` switches the dialog off — `false` sends a client that could have
-  been asked down the two-call-token path instead. For a scheduled job or a test
-  harness, where a dialog is the wrong shape rather than an unwanted one.
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which
+  lifts the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1,
+  so this repository was held on TypeScript 6 by its linter rather than by its
+  code.
 
-  It does **not** remove the guard: there is no setting in which a guarded call
-  goes unannounced. Two deliberate rough edges come with it. The variable is
-  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
-  the environment — which is why a server started with it off prints a line
-  saying so, and why the fallback text names the server instead of blaming a
-  client that was working fine. And a value that is neither `true` nor `false`
-  **stops the server**: it is the only variable here that defaults to _on_, so
-  failing open on a typo would leave the dialog running while the operator
-  believed it was off. It is read after the credentials are wiped from the
-  environment, so that exit cannot leave them behind.
-
-- A `docs/guide/approval.md` page.
+- The tool filter, the confirmation store and the documentation-asset generator
+  now come from **`mcp-tool-allowlist`**, **`mcp-approval`** and
+  **`svg-asset-set`** rather than from copies kept here — 791 fewer lines, and
+  one place to fix each. None of them has a runtime dependency of its own.
 
 ### Fixed
 
@@ -123,31 +144,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result. Rows are now dropped whole until the table fits, naming what was
   dropped and the `start_row` that fetches it, and a single cell is capped at
   200 characters.
-
-### Changed
-
-- `GSC_READ_ONLY` now also accepts `1` and `yes`, in any casing or padding —
-  the spellings a compose file or a systemd unit is most likely to use. Under
-  the previous exact match on `true` they left every write tool registered while
-  the operator believed the server could not write. Deliberately more tolerant
-  than `ELICITATION`, which is fatal on anything it does not recognise: this one
-  is a protection, that one is a permission.
-
-- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
-  always did; the change is the package layout behind it, and it is what lets
-  the dialog above work on both protocol eras from one code path — including
-  behind a stateless gateway, where the older mechanism silently fell back to
-  the weaker token for every client.
-
-- The linter is **oxlint** instead of eslint plus typescript-eslint, which
-  lifts the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1,
-  so this repository was held on TypeScript 6 by its linter rather than by its
-  code.
-
-- The tool filter, the confirmation store and the documentation-asset generator
-  now come from **`mcp-tool-allowlist`**, **`mcp-approval`** and
-  **`svg-asset-set`** rather than from copies kept here — 791 fewer lines, and
-  one place to fix each. None of them has a runtime dependency of its own.
 
 ## [0.1.1] - 2026-08-30
 
