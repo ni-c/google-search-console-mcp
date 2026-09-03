@@ -1,23 +1,27 @@
 import { createRequire } from 'node:module';
-
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { GoogleApi } from './api.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import {
+  buildToolFilter,
+  installToolFilter,
+  type ToolFilter,
+} from 'mcp-tool-allowlist';
 import {
   createTokenSource,
   scopesFor,
   type Service,
   type TokenSource,
 } from './auth.js';
+
+import { GoogleApi } from './api.js';
 import type { Config } from './config.js';
-import { ConfirmationStore } from './confirm.js';
-import {
-  buildToolFilter,
-  installToolFilter,
-  type ToolFilter,
-} from './tool-filter.js';
+import { ConfirmationStore, createApproval } from 'mcp-approval';
 import { registerAnalyticsTools } from './tools/analytics.js';
-import { ALL_TOOLS, READ_TOOLS, TOOL_SERVICES } from './tools/catalogue.js';
+import {
+  ALL_TOOLS,
+  ESSENTIAL_TOOLS,
+  READ_TOOLS,
+  TOOL_SERVICES,
+} from './tools/catalogue.js';
 import type { ToolContext } from './tools/context.js';
 import { registerIndexingTools } from './tools/indexing.js';
 import { registerInspectionTools } from './tools/inspection.js';
@@ -82,6 +86,35 @@ export function servicesFor(tools: Iterable<string>): Set<Service> {
   return services;
 }
 
+/**
+ * The filter this server's configuration describes.
+ *
+ * Exported because the scope tests build one too, and the options are this
+ * server's own vocabulary rather than something to restate in a second place —
+ * a test asking for a different catalogue would prove nothing about what runs.
+ */
+export function toolFilterFor(config: Config): ToolFilter {
+  return buildToolFilter({
+    allowTools: config.allowTools,
+    denyTools: config.denyTools,
+    catalogue: {
+      all: ALL_TOOLS,
+      essential: ESSENTIAL_TOOLS,
+      ungated: READ_TOOLS,
+    },
+    names: {
+      allow: 'GSC_ALLOW_TOOLS',
+      deny: 'GSC_DENY_TOOLS',
+      server: 'google-search-console-mcp',
+    },
+    gate: {
+      closed: config.readOnly,
+      variable: 'GSC_READ_ONLY',
+      noun: 'read-only mode',
+    },
+  });
+}
+
 export interface ServerOptions {
   /**
    * Supplies the access token instead of `google-auth-library`.
@@ -102,7 +135,7 @@ export function createServer(
 ): McpServer {
   // Before anything is built: an unusable tool list should fail on the way in,
   // not leave a server running with tools quietly missing.
-  const filter = buildToolFilter(config);
+  const filter = toolFilterFor(config);
 
   // Least privilege, decided here because this is the only place that knows both
   // halves — which tools survived, and whether writes are allowed at all.
@@ -117,6 +150,12 @@ export function createServer(
     ),
     config,
     confirmations: new ConfirmationStore(),
+    // One approver per server: it holds the key that seals the request state
+    // carried out through the client and back.
+    approval: createApproval({
+      server: 'google-search-console-mcp',
+      elicitation: config.elicitation,
+    }),
     readOnly: config.readOnly,
   };
 

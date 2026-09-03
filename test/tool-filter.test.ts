@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildToolFilter, ToolFilterError } from '../src/tool-filter.js';
+import { ToolFilterError } from 'mcp-tool-allowlist';
+
+import { toolFilterFor } from '../src/server.js';
 import {
   ALL_TOOLS,
   ESSENTIAL_TOOLS,
@@ -9,6 +11,7 @@ import {
   WRITE_TOOLS,
 } from '../src/tools/catalogue.js';
 import { connect, testConfig } from './harness.js';
+import { expectPortableToolSchemas } from 'mcp-integration-harness';
 
 /**
  * The catalogue is a hand-maintained list, and this file is what stops it
@@ -55,6 +58,112 @@ describe('the catalogue and the server agree', () => {
       expect(readOnly, `${tool.name} has the wrong readOnlyHint`).toBe(
         (READ_TOOLS as readonly string[]).includes(tool.name)
       );
+    }
+  });
+
+  it('declares an output schema on every tool', async () => {
+    // The same argument as the annotations below, one field along. A tool that
+    // says nothing about its result forces a client to parse prose to find out
+    // what it got, and the SDK sends no `structuredContent` at all for a tool
+    // that declared no schema — six tools here answered with a sentence.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.outputSchema, tool.name).toBeDefined();
+      // An object root, not merely a schema. SEP-2106 allows an array or a
+      // scalar, but a 2025-era client is served that same tool with the schema
+      // rewritten to `{result: …}` — so it would answer in two shapes
+      // depending on who asked.
+      expect(tool.outputSchema?.type, tool.name).toBe('object');
+    }
+  });
+
+  it('advertises schemas every client can read', async () => {
+    // Legal JSON Schema is not enough. `{}` in a schema position — what zod
+    // writes for `looseObject`, `catchall` and `z.unknown()` — and `type` as an
+    // array are both refused, or silently dropped, by some clients. Neither is
+    // a contract: each has an equivalent spelling that says the same thing, so
+    // there is nothing here to excuse.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expectPortableToolSchemas(tools);
+  });
+
+  it('marks every result built from Google’s data as untrusted', async () => {
+    // "It is only search data" is exactly the wrong intuition: a search query
+    // is a string a member of the public typed into Google, and a page title
+    // comes from the crawled site. A client that reads only
+    // `structuredContent` must not get either unframed.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const plain = tools
+      .filter((tool) => {
+        const properties = tool.outputSchema?.properties as
+          Record<string, unknown> | undefined;
+        return properties?.untrusted === undefined;
+      })
+      .map((tool) => tool.name)
+      .sort();
+    // The six whose answer is a property this server was given and a fact it
+    // established. A marker on those would make the marker mean nothing.
+    expect(plain).toEqual([
+      'add_site',
+      'delete_site',
+      'delete_sitemap',
+      'submit_sitemap',
+      'submit_sitemaps',
+      'unverify_site',
+    ]);
+  });
+
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world. Five write tools here stated only
+    // idempotentHint and inherited the rest.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('warns only where history or access is lost', async () => {
+    // What a property holds is sixteen months of performance data, and that is
+    // what delete_site destroys — re-adding starts empty. Adding, submitting
+    // and verifying take nothing away, and all five used to inherit
+    // destructiveHint: true from the default.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t.annotations]));
+    for (const additive of [
+      'add_site',
+      'verify_site',
+      'submit_sitemap',
+      'submit_sitemaps',
+      'request_indexing',
+    ]) {
+      expect(byName.get(additive)?.destructiveHint, additive).toBe(false);
+    }
+    for (const destructive of [
+      'delete_site',
+      'delete_sitemap',
+      'unverify_site',
+      'update_site_owners',
+    ]) {
+      expect(byName.get(destructive)?.destructiveHint, destructive).toBe(true);
     }
   });
 
@@ -120,13 +229,6 @@ describe('narrowing the tool list', () => {
     expect(names).toContain('list_sites');
   });
 
-  it('treats an empty value as unset rather than as "nothing"', () => {
-    // `GSC_ALLOW_TOOLS=` in a compose file must not take the server down.
-    expect(buildToolFilter(testConfig({ allowTools: '  ' })).active).toBe(
-      false
-    );
-  });
-
   it('answers tools/list rather than "method not found" when all are filtered', async () => {
     // The SDK installs its tools/list handler from inside the registration
     // path, so a server that *skipped* every tool would answer the whole method
@@ -139,28 +241,22 @@ describe('narrowing the tool list', () => {
 describe('refusing a tool list that cannot mean what it says', () => {
   it('rejects a name that matches nothing', () => {
     expect(() =>
-      buildToolFilter(testConfig({ allowTools: 'list_siets' }))
+      toolFilterFor(testConfig({ allowTools: 'list_siets' }))
     ).toThrow(ToolFilterError);
-  });
-
-  it('rejects a star that is not at the end', () => {
-    expect(() =>
-      buildToolFilter(testConfig({ allowTools: '*_sites' }))
-    ).toThrow(/prefix followed by a single trailing/);
   });
 
   it('names a write tool that read-only suppresses, instead of "unknown tool"', () => {
     // The one answer that would be wrong: the tool exists, read-only is why it
     // is not there, and saying "no such tool" sends the reader hunting a typo.
     expect(() =>
-      buildToolFilter(testConfig({ allowTools: 'delete_site', readOnly: true }))
-    ).toThrow(/is a write tool, but GSC_READ_ONLY/);
+      toolFilterFor(testConfig({ allowTools: 'delete_site', readOnly: true }))
+    ).toThrow(/read-only mode suppresses.*unset GSC_READ_ONLY/s);
   });
 
   it('warns rather than fails when a pattern only matches write tools', () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(() =>
-      buildToolFilter(
+      toolFilterFor(
         testConfig({ allowTools: 'list_*,delete_*', readOnly: true })
       )
     ).not.toThrow();
@@ -172,7 +268,7 @@ describe('refusing a tool list that cannot mean what it says', () => {
 
   it('refuses to start with an empty tool list', () => {
     expect(() =>
-      buildToolFilter(
+      toolFilterFor(
         testConfig({ allowTools: 'list_sites', denyTools: 'list_sites' })
       )
     ).toThrow(/leave no tools registered/);
@@ -185,7 +281,7 @@ describe('refusing a tool list that cannot mean what it says', () => {
       '1//0eXaMPLE-refresh-token-value-that-is-long-AND-mixed-case';
     let message = '';
     try {
-      buildToolFilter(testConfig({ allowTools: secret }));
+      toolFilterFor(testConfig({ allowTools: secret }));
     } catch (error) {
       message = (error as Error).message;
     }

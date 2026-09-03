@@ -1,15 +1,22 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import { GoogleApiError, pathSegment } from '../api.js';
-import { guarded } from '../guard.js';
-import { listField } from '../normalize.js';
+import {
+  markedRecord,
+  record,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 import {
   budgetedList,
   budgetedUntrustedResult,
   run,
-  textResult,
+  structuredResult,
 } from '../result.js';
+
+import { GoogleApiError, pathSegment } from '../api.js';
+import { READ_ONLY } from './annotations.js';
+import { guarded } from '../guard.js';
+import { listField } from '../normalize.js';
 import { confirmToken, resolveSite, siteUrlSchema, webUrl } from '../schema.js';
 import type { ToolContext } from './context.js';
 
@@ -41,7 +48,7 @@ const MAX_BATCH = 50;
 
 export function registerSitemapTools(
   server: McpServer,
-  { api, config, confirmations, readOnly }: ToolContext
+  { api, approval, config, confirmations, readOnly }: ToolContext
 ): void {
   server.registerTool(
     'list_sitemaps',
@@ -52,7 +59,7 @@ export function registerSitemapTools(
         'downloaded it, how many URLs it holds per content type, and whether ' +
         'processing produced warnings or errors. ' +
         RESUBMIT_NOTE,
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         sitemap_index: webUrl
           .optional()
@@ -61,8 +68,16 @@ export function registerSitemapTools(
               'index. Without it, only sitemaps submitted directly are returned — ' +
               'the children of an index are not.'
           ),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          sitemaps: z.array(record),
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ site_url, sitemap_index }) =>
       run(async () => {
@@ -98,13 +113,14 @@ export function registerSitemapTools(
         'last downloaded, warnings, errors, and the URL counts per content type. ' +
         'This is how to check whether a submission actually worked — errors ' +
         'appear here, never in the response to submit_sitemap.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         feedpath: webUrl.describe(
           'The full URL of the sitemap, e.g. https://example.com/sitemap.xml'
         ),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: markedRecord,
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -127,14 +143,27 @@ export function registerSitemapTools(
         ' The call succeeding means Google accepted the address, not that the ' +
         'sitemap is valid — it is fetched later, and any parse error shows up in ' +
         'get_sitemap minutes to hours afterwards.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         feedpath: webUrl.describe(
           'The full URL of the sitemap. It must be inside the property — ' +
             'https://example.com/sitemap.xml for https://example.com/'
         ),
+      }),
+      annotations: {
+        // Additive. Submitting the same sitemap again re-registers the same
+        // one.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z.object({
+        site: z.string(),
+        feedpath: z.string(),
+        submitted: z.literal(true),
+        note: z.string(),
+      }),
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -147,12 +176,15 @@ export function registerSitemapTools(
           undefined,
           { retryable: true }
         );
-        return textResult(
-          `Submitted ${feedpath} for ${site}.\n\n` +
+        return structuredResult({
+          site,
+          feedpath,
+          submitted: true,
+          note:
             'Google has accepted the address; it has not fetched the file yet. ' +
             'Call get_sitemap in a few minutes to see lastDownloaded, the URL ' +
-            'counts, and any warnings or errors.'
-        );
+            'counts, and any warnings or errors.',
+        });
       })
   );
 
@@ -167,15 +199,28 @@ export function registerSitemapTools(
         'the calls one after another — but it saves a round trip per sitemap, ' +
         'which is what makes a large site practical. One failure does not stop ' +
         'the rest.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         feedpaths: z
           .array(webUrl)
           .min(1)
           .max(MAX_BATCH)
           .describe('The full URLs of the sitemaps to submit'),
+      }),
+      annotations: {
+        // The same, for several at once.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z
+        .object({
+          truncated: truncationNote,
+          results: z.array(record),
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ site_url, feedpaths }) =>
       run(async () => {
@@ -227,17 +272,33 @@ export function registerSitemapTools(
       description:
         'Removes a sitemap from the property. Two-step: the first call returns a ' +
         'confirmation token, the second performs the removal.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         feedpath: webUrl.describe('The full URL of the sitemap to remove'),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Google stops using it to find URLs, and the submission history and
+        // error report for it are discarded. submit_sitemap puts the sitemap
+        // back but not its history.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true, idempotentHint: false },
+      outputSchema: z.object({
+        site: z.string(),
+        feedpath: z.string(),
+        removed: z.literal(true),
+      }),
     },
-    ({ site_url, feedpath, confirm_token }) =>
+    ({ site_url, feedpath, confirm_token }, mcp) =>
       run(async () => {
         const site = resolveSite(config, site_url);
         return guarded(
+          server,
+          mcp,
+          approval,
           confirmations,
           {
             // Both the property and the feedpath: a token for one sitemap must
@@ -258,7 +319,7 @@ export function registerSitemapTools(
           },
           async () => {
             await api.delete('search-console', sitemapsPath(site, feedpath));
-            return textResult(`Removed ${feedpath} from ${site}.`);
+            return structuredResult({ site, feedpath, removed: true });
           }
         );
       })

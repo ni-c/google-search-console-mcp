@@ -1,14 +1,9 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { pathSegment } from '../api.js';
-import { normalizeSiteUrl } from '../config.js';
-import { guarded } from '../guard.js';
-import { listField } from '../normalize.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   budgetedList,
   budgetedUntrustedResult,
   run,
-  textResult,
+  structuredResult,
 } from '../result.js';
 import {
   allowsSite,
@@ -16,6 +11,19 @@ import {
   resolveSite,
   siteUrlSchema,
 } from '../schema.js';
+import { z } from 'zod';
+import {
+  markedRecord,
+  record,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
+
+import { pathSegment } from '../api.js';
+import { READ_ONLY } from './annotations.js';
+import { normalizeSiteUrl } from '../config.js';
+import { guarded } from '../guard.js';
+import { listField } from '../normalize.js';
 import type { ToolContext } from './context.js';
 
 /** Where every Search Console property call lives. */
@@ -39,7 +47,7 @@ const PERMISSION_NOTE =
 
 export function registerSiteTools(
   server: McpServer,
-  { api, config, confirmations, readOnly }: ToolContext
+  { api, approval, config, confirmations, readOnly }: ToolContext
 ): void {
   server.registerTool(
     'list_sites',
@@ -51,8 +59,16 @@ export function registerSiteTools(
         'anything returns 403: an empty list means the identity was never added ' +
         'to any property, which is the usual state of a fresh service account. ' +
         PERMISSION_NOTE,
-      inputSchema: {},
-      annotations: { readOnlyHint: true },
+      inputSchema: z.object({}),
+      annotations: READ_ONLY,
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          truncated: truncationNote,
+          sites: z.array(record),
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     () =>
       run(async () => {
@@ -99,8 +115,9 @@ export function registerSiteTools(
         'it. Useful for settling which of the two spellings exists — ' +
         '"sc-domain:example.com" and "https://example.com/" are separate ' +
         'properties holding separate data.',
-      inputSchema: { site_url: siteUrlSchema(config) },
-      annotations: { readOnlyHint: true },
+      inputSchema: z.object({ site_url: siteUrlSchema(config) }),
+      annotations: READ_ONLY,
+      outputSchema: markedRecord,
     },
     ({ site_url }) =>
       run(async () => {
@@ -124,7 +141,7 @@ export function registerSiteTools(
         'get a working property, use setup_site, which does this in the right ' +
         'order — get_verification_token, then the DNS record or HTML file, then ' +
         'verify_site, then this.',
-      inputSchema: {
+      inputSchema: z.object({
         // Not `siteUrlSchema`: adding a property is the one call where
         // defaulting to GSC_SITE_URL would be actively wrong. The default names
         // the property you work with; this argument names one that does not
@@ -135,8 +152,20 @@ export function registerSiteTools(
             'GSC_SITE_URL, because the property being created is by definition ' +
             'not the one you are already working with.'
         ),
+      }),
+      annotations: {
+        // Additive: it brings a property into Search Console. Adding one
+        // that exists returns the existing property.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z.object({
+        site: z.string(),
+        added: z.literal(true),
+        note: z.string(),
+      }),
     },
     ({ site_url }) =>
       run(async () => {
@@ -148,13 +177,15 @@ export function registerSiteTools(
         }
         const site = resolveSite(config, site_url);
         await api.put('search-console', `${SITES}/${pathSegment(site)}`);
-        return textResult(
-          `${site} was added to Search Console.\n\n` +
+        return structuredResult({
+          site,
+          added: true,
+          note:
             'It is not verified yet unless this credential already owned the ' +
             'domain. Run get_site to see the permission level: anything other ' +
             'than siteOwner or siteFullUser means data calls will return 403. ' +
-            'setup_site says what is still missing.'
-        );
+            'setup_site says what is still missing.',
+        });
       })
   );
 
@@ -165,16 +196,28 @@ export function registerSiteTools(
       description:
         'Removes a property from Search Console. Two-step: the first call ' +
         'returns a confirmation token, the second performs the removal.',
-      inputSchema: {
+      inputSchema: z.object({
         site_url: siteUrlSchema(config),
         confirm_token: confirmToken,
+      }),
+      annotations: {
+        // Discards roughly sixteen months of performance data. Re-adding the
+        // property starts an empty history — that is what is destroyed here,
+        // not the entry in a list.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true, idempotentHint: false },
+      outputSchema: z.object({ site: z.string(), removed: z.literal(true) }),
     },
-    ({ site_url, confirm_token }) =>
+    ({ site_url, confirm_token }, mcp) =>
       run(async () => {
         const site = resolveSite(config, site_url);
         return guarded(
+          server,
+          mcp,
+          approval,
           confirmations,
           {
             tool: 'delete_site',
@@ -190,7 +233,7 @@ export function registerSiteTools(
           },
           async () => {
             await api.delete('search-console', `${SITES}/${pathSegment(site)}`);
-            return textResult(`${site} was removed from Search Console.`);
+            return structuredResult({ site, removed: true });
           }
         );
       })

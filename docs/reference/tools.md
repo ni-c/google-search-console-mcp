@@ -8,6 +8,22 @@ Which of them load is configurable — see
 [choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
 The five marked ★ are the `essential` preset.
 
+Tools marked 👤 **ask a person** before they act, through MCP elicitation — a
+dialog the model cannot answer on its behalf. Where the client cannot show one
+they fall back to a two-call `confirm_token`, and `ELICITATION=false` takes that
+fallback deliberately. See [Asking a person](/guide/approval).
+
+Every tool declares an `outputSchema` and answers with `structuredContent`
+beside the text block, so a client can use a result without parsing prose. Every
+tool that reports Google's data carries `untrusted: true` and
+`source: "search-console"` as fields of that object — a search query is a string
+a member of the public typed into Google. Six tools are without the marker,
+because their answer is a property this server was given and a fact it
+established.
+
+Every tool declares all four MCP annotations — `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`.
+
 ## Setting a property up
 
 ### `setup_site` ★ read
@@ -61,7 +77,7 @@ credential as an owner.
 A failure is almost always "not there yet": DNS takes minutes to an hour, and a
 fresh file may be behind a CDN cache. Retry later.
 
-### `unverify_site` write, two-step
+### `unverify_site` 👤 write
 
 Gives up verified ownership. Every property for the site drops to
 `siteUnverifiedUser` and starts returning 403, and the Indexing API stops working
@@ -70,9 +86,9 @@ entirely. Google also refuses to remove a site's last owner.
 | Argument | |
 | --- | --- |
 | `id` | The verification resource id, from `list_verified_sites` |
-| `confirm_token` | From this tool's first refusal |
+| `confirm_token` | Only on the fallback path — from this tool's first refusal |
 
-### `update_site_owners` write, two-step
+### `update_site_owners` 👤 write
 
 Replaces the owner list. This is how a second person or a service account is
 granted ownership without placing a token of their own — and, with the wrong
@@ -84,7 +100,7 @@ it refuses to leave a site with no owner at all.
 | `id` | The verification resource id |
 | `owners` | The **complete** list afterwards. Everyone not in it loses ownership |
 | `method` | `update` (PUT, default) or `patch`. Both replace the list; the API offers both and they behave identically |
-| `confirm_token` | From this tool's first refusal |
+| `confirm_token` | Only on the fallback path — from this tool's first refusal |
 
 Call `get_verified_site` first and send back the existing addresses plus the new
 one. An empty list is refused — that is the shape of an accidental wipe.
@@ -121,7 +137,7 @@ This is the one tool that does not fall back to `GSC_SITE_URL` — the default
 names the property you already work with, and this argument names one that does
 not exist yet.
 
-### `delete_site` write, two-step
+### `delete_site` 👤 write
 
 Removes a property. Search Console retains roughly 16 months of performance data
 per property and this discards all of it; re-adding starts an empty history.
@@ -164,7 +180,7 @@ Up to 50 sitemaps for one property in a single call, with per-entry results. The
 API has no batch method; this makes the calls one after another and one failure
 does not stop the rest.
 
-### `delete_sitemap` write, two-step
+### `delete_sitemap` 👤 write
 
 Removes a sitemap. Google stops using it for discovery and the submission history
 is discarded; the file itself is untouched and `submit_sitemap` puts it back.

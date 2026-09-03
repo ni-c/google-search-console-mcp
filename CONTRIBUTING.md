@@ -38,6 +38,37 @@ Three things about developing against the real APIs:
 You do not need any of this to work on most of the server. The whole suite runs
 against a stubbed `fetch` and touches no network.
 
+## Why there is no integration suite
+
+Every other server in this family has a `test/integration/` that brings up its
+backend in Docker, spawns the built server over stdio and calls every tool in
+the catalogue against it — the one test a stubbed `fetch` cannot do, because a
+stub can only agree with whatever its author believed about the API.
+
+This server cannot have one, and the reason is not effort. Its backend is
+Google: Search Console, Site Verification and the Indexing API have no
+self-hosted edition, no emulator and no sandbox project. There is nothing to
+put in a `compose.yml`.
+
+**The gap is named rather than papered over.** Writing a fake Google and testing
+against it would produce a green suite that proves the same thing the unit tests
+already prove — that this server agrees with itself — while looking like
+coverage of something more. So the unit tests stay what they are, and the
+verification against the real APIs is manual and written down here:
+
+1. A service account with a throwaway property, as in the section above. Nothing
+   that matters, because `delete_site` is on the list.
+2. `GSC_READ_ONLY=true` for the read tools, then `false` once, deliberately, for
+   the write ones.
+3. Through the MCP Inspector, tool by tool, comparing what comes back with the
+   Search Console web interface for the same property and date range.
+4. Watch the two budgets: URL Inspection is **2 000 calls per property per day**
+   and is spent, not throttled, and the aggregated tables lag by two to three
+   days — a report that looks empty for yesterday is usually correct.
+
+Anything found this way belongs in the tool's own description, where the next
+model reading it will see it, and in a unit test that pins the shape.
+
 ## Expectations
 
 - **Tests.** Behaviour changes come with a test that fails without the change.
@@ -48,7 +79,7 @@ against a stubbed `fetch` and touches no network.
   one your change might open, in the PR text.
 - **No new runtime dependencies** without a very good reason; the small tree is a
   feature.
-- Run `npm run lint` before pushing — it checks both eslint and prettier, and prettier
+- Run `npm run lint` before pushing — it checks both oxlint and prettier, and prettier
   also validates the YAML, JSON and Markdown files.
 
 ## Questions and bugs

@@ -73,6 +73,22 @@ export function createTokenSource(
   if (auth === undefined) return unconfigured();
   switch (auth.mode) {
     case 'service-account':
+      // The second lock on the same door `loadAuth` bolts. google-auth-library
+      // reads `keyFile` as `opts.keyFilename || opts.keyFile`, so an empty
+      // string is not "a key file that does not exist" — it is "no key file
+      // given", and the library falls through to application default
+      // credentials. The failure is silent and identity-shaped: the server
+      // keeps answering, from a different account than the one it names. Worth
+      // a check that can never fire through the configured path, because
+      // nothing downstream would ever report it.
+      if (auth.key === undefined && !auth.keyFile?.trim()) {
+        throw new Error(
+          'service-account authentication was selected but no key and no key ' +
+            'file are available. Refusing to continue: an empty key file makes ' +
+            'google-auth-library fall back to application default credentials, ' +
+            'which is a different identity than the one configured.'
+        );
+      }
       return fromGoogleAuth(
         new GoogleAuth(
           auth.key !== undefined

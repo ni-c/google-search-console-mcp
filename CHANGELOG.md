@@ -12,6 +12,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Added
+
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result —
+  which six of them made unavoidable, since they answered with a sentence. The
+  sentence stays, in the text block, and so does `query_search_analytics`'
+  rendered table: the rows themselves are now in the structured half.
+
+  Every tool that reports Google's data carries `untrusted: true` and
+  `source: "search-console"` as fields, not only as a preamble in the text. A
+  search query is a string a member of the public typed into Google and a page
+  title comes from the crawled site, so a client that reads the structured half
+  must not get either unframed. Six tools are without the marker: their answer
+  is a property this server was given and a fact it established.
+
+### Changed
+
+- The advertised schemas avoid spellings that are legal JSON Schema and still
+  get a tool refused, or its constraint silently dropped, by some MCP clients:
+  an open object now writes `"additionalProperties": true` rather than the
+  empty schema `{}` zod emits for it; a value that was left untyped is declared
+  as what it really is; and a nullable field is written as `anyOf` branches
+  rather than `"type": ["string", "null"]`, which several clients read as a
+  single type and then drop. What the tools accept and return is unchanged;
+  only the way the schema says so is.
+
+- A result too large to shorten is now an error rather than an envelope saying
+  so. The envelope was a different shape from what the tool declares it
+  returns, which the SDK refuses.
+
+- The two-call `confirm_token` prompt is an error result. What was asked for did
+  not happen, which is what `isError` says. The text is unchanged and still
+  carries the token.
+
+- stdio is served through `serveStdio`, so the connection's era is negotiated
+  on the opening exchange rather than assumed. A client that pins the
+  `2026-07-28` era is served it; until now its `server/discover` probe was
+  answered with "Method not found" and only `2025-11-25` was on offer. A client
+  that speaks the older era sees no change — it is still pinned to one instance
+  for the life of the connection, exactly as a hand-wired
+  `StdioServerTransport` served it.
+
+## [Unreleased]
+
+### Added
+
+- Tools that need a confirmation now **ask the user**, on clients that can show
+  a prompt. The two-call `confirm_token` remains for clients that cannot, so
+  nothing that works today stops working — but where a person can be asked, one
+  is, instead of a token that only proves the same call was made twice.
+
+- `ELICITATION` switches the dialog off — `false` sends a client that could have
+  been asked down the two-call-token path instead. For a scheduled job or a test
+  harness, where a dialog is the wrong shape rather than an unwanted one.
+
+  It does **not** remove the guard: there is no setting in which a guarded call
+  goes unannounced. Two deliberate rough edges come with it. The variable is
+  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
+  the environment — which is why a server started with it off prints a line
+  saying so, and why the fallback text names the server instead of blaming a
+  client that was working fine. And a value that is neither `true` nor `false`
+  **stops the server**: it is the only variable here that defaults to _on_, so
+  failing open on a typo would leave the dialog running while the operator
+  believed it was off. It is read after the credentials are wiped from the
+  environment, so that exit cannot leave them behind.
+
+- A `docs/guide/approval.md` page.
+
+### Fixed
+
+- **An empty `GSC_SERVICE_ACCOUNT_KEY_FILE` no longer falls back to application
+  default credentials.** A variable that is set but empty is now a startup
+  error, like every other malformed credential here.
+
+  It is not a spelling anybody has to type: `GSC_SERVICE_ACCOUNT_KEY_FILE=${GSC_KEY_FILE}`
+  in a compose file with `GSC_KEY_FILE` unset substitutes the empty string
+  rather than dropping the variable. An empty path reached google-auth-library
+  as `{ keyFile: '' }`, which is falsy there and therefore ignored — so the
+  library searched for application default credentials and the server ran as
+  whatever the machine is logged into, while its startup line said
+  `service-account`. On a developer workstation that is usually an account that
+  can see every property in the organisation. A complete OAuth2 credential set
+  at the same time was discarded in favour of it.
+
+  Two further changes come with it. A service account key and OAuth2 variables
+  set together are now a startup error instead of the OAuth ones being ignored
+  in silence — two named identities is the same ambiguity as two service account
+  keys, and the answer is the same. And `createTokenSource` refuses a
+  service-account credential with no key and no key file, so the fallback cannot
+  be reached even if a future caller builds that shape another way.
+
+- **`budgetedJson` no longer spins on strings it cannot shorten.** The
+  replacement for an over-long string is its first 200 characters plus a
+  ~30-character marker, so a string of exactly 230 characters was replaced by a
+  string of 230 characters and offered again on the next pass, forever. On a
+  single-threaded runtime that stops the whole server, not just the call.
+  Already-shortened strings are now excluded from later passes, and both
+  shrinking loops have a round ceiling that ends in the same honest give-up as
+  running out of things to cut.
+
+- **`query_search_analytics` is held to the result budget it is the reason
+  for.** `MAX_RESULT_BYTES` is documented as existing because of this tool, and
+  it was the one tool that never measured itself against it: the row cap bounds
+  how many rows a table has, and nothing bounded how wide one is. `page` and
+  `query` dimension values are arbitrary length, so a page-by-query breakdown on
+  a property with facet navigation returned several times the budget in one
+  result. Rows are now dropped whole until the table fits, naming what was
+  dropped and the `start_row` that fetches it, and a single cell is capped at
+  200 characters.
+
+### Changed
+
+- `GSC_READ_ONLY` now also accepts `1` and `yes`, in any casing or padding —
+  the spellings a compose file or a systemd unit is most likely to use. Under
+  the previous exact match on `true` they left every write tool registered while
+  the operator believed the server could not write. Deliberately more tolerant
+  than `ELICITATION`, which is fatal on anything it does not recognise: this one
+  is a protection, that one is a permission.
+
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it, and it is what lets
+  the dialog above work on both protocol eras from one code path — including
+  behind a stateless gateway, where the older mechanism silently fell back to
+  the weaker token for every client.
+
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which
+  lifts the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1,
+  so this repository was held on TypeScript 6 by its linter rather than by its
+  code.
+
+- The tool filter, the confirmation store and the documentation-asset generator
+  now come from **`mcp-tool-allowlist`**, **`mcp-approval`** and
+  **`svg-asset-set`** rather than from copies kept here — 791 fewer lines, and
+  one place to fix each. None of them has a runtime dependency of its own.
+
 ## [0.1.1] - 2026-08-30
 
 ### Fixed

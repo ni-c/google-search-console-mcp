@@ -1,13 +1,15 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
+import { record, untrustedFields } from '../output-schema.js';
 import {
-  budgetedJson,
+  budget,
   budgetedUntrustedResult,
   run,
   untrustedResult,
 } from '../result.js';
+
 import { assertUrlAllowed, webUrl } from '../schema.js';
+import { READ_ONLY } from './annotations.js';
 import type { ToolContext } from './context.js';
 
 /**
@@ -56,10 +58,18 @@ export function registerIndexingTools(
         'the notification history only — it says nothing about whether the page ' +
         'is indexed. inspect_url answers that. ' +
         OWNERSHIP_NOTE,
-      inputSchema: {
+      inputSchema: z.object({
         url: webUrl.describe('The URL to look up the notification history for'),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        url: z.string().optional(),
+        notification: record.optional(),
+        latestUpdate: record.optional(),
+        latestRemove: record.optional(),
+        note: z.string().optional(),
+      }),
     },
     ({ url }) =>
       run(async () => {
@@ -85,7 +95,7 @@ export function registerIndexingTools(
         '\n\n' +
         OWNERSHIP_NOTE +
         ' The default quota is 200 URLs per day per project.',
-      inputSchema: {
+      inputSchema: z.object({
         url: webUrl.describe('The URL that changed'),
         type: z
           .enum(['URL_UPDATED', 'URL_DELETED'])
@@ -95,8 +105,23 @@ export function registerIndexingTools(
               'one that has been removed. URL_DELETED requires that the page ' +
               'actually returns 404 or 410 — Google checks.'
           ),
+      }),
+      annotations: {
+        // Asks Google to look at a URL. It adds a request to a queue and
+        // takes nothing away; asking twice asks for the same thing.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: z.object({
+        ...untrustedFields,
+        url: z.string(),
+        type: z.enum(['URL_UPDATED', 'URL_DELETED']),
+        accepted: z.literal(true).describe('Accepted is not acted upon.'),
+        note: z.string(),
+        notification: record,
+      }),
     },
     ({ url, type }) =>
       run(async () => {
@@ -109,12 +134,13 @@ export function registerIndexingTools(
             type: type ?? 'URL_UPDATED',
           }
         );
-        return untrustedResult(
-          `Notification accepted for ${url} (${type ?? 'URL_UPDATED'}).\n\n` +
-            `${budgetedJson(result)}\n\n` +
-            'Accepted is not acted upon. ' +
-            SCOPE_WARNING
-        );
+        return untrustedResult({
+          url,
+          type: type ?? 'URL_UPDATED',
+          accepted: true,
+          note: 'Accepted is not acted upon. ' + SCOPE_WARNING,
+          notification: budget(result),
+        });
       })
   );
 }

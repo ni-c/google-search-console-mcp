@@ -7,6 +7,7 @@
 [![license](https://img.shields.io/npm/l/%40ni-c%2Fgoogle-search-console-mcp)](LICENSE)
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fgoogle--search--console--mcp-blue)](https://github.com/ni-c/google-search-console-mcp/pkgs/container/google-search-console-mcp)
 [![docs](https://img.shields.io/badge/docs-google--search--console--mcp.ni--c.de-informational)](https://google-search-console-mcp.ni-c.de)
+[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
@@ -16,7 +17,7 @@ service that tells you how Google sees your site — this reads it and sets it u
 Lets MCP clients like Claude Code, Claude Desktop or Codex create a property and
 prove ownership of it, submit and refresh sitemaps, ask what any URL's index
 status is, and query the whole Performance report — with the irreversible
-operations behind a confirmation token and the write tools switchable off
+operations put to a person first and the write tools switchable off
 entirely.
 
 21 tools is the ceiling, not the floor: `GSC_ALLOW_TOOLS=essential` registers a
@@ -93,9 +94,10 @@ registries and sandbox inspectors can introspect it.
 | `GOOGLE_APPLICATION_CREDENTIALS` | Application default credentials, used when no `GSC_` credential is set                                         |
 | `GSC_SITE_URL`                   | Default property, e.g. `sc-domain:example.com` or `https://example.com/`. Makes `site_url` optional everywhere |
 | `GSC_ALLOWED_SITES`              | Comma-separated properties this server may touch at all; anything else is refused                              |
-| `GSC_READ_ONLY`                  | `true` registers only the twelve read tools                                                                    |
+| `GSC_READ_ONLY`                  | `true` (or `1`/`yes`) registers only the twelve read tools                                                     |
 | `GSC_ALLOW_TOOLS`                | Comma-separated tool names, a `list_*` prefix, or `essential`                                                  |
 | `GSC_DENY_TOOLS`                 | Same shape, subtracted from whatever the allow list left                                                       |
+| `ELICITATION`                    | `false` replaces the approval dialog with the two-call token. **Not prefixed**                                 |
 
 Credentials are tried in that order — explicit beats ambient. A **partial** OAuth
 triple is a startup error rather than a reason to fall through to application
@@ -132,6 +134,10 @@ An entry that matches no tool **stops the server** with the list of real names.
 An ignored typo would otherwise leave a tool missing from `tools/list` with
 nothing pointing at the cause, and nobody traces an absence back to an
 environment variable.
+
+If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de) is
+the other answer — its `/hub` endpoint replaces every server's tools with six
+meta-tools.
 
 Narrowing the list also narrows the credential: the OAuth scopes this server
 requests are derived from the tools that are actually registered, so a server
@@ -184,9 +190,55 @@ docker run --rm -i \
   ghcr.io/ni-c/google-search-console-mcp
 ```
 
+### Through mcp-hub
+
+A client that cannot spawn a local process — ChatGPT connectors, Claude on the web,
+Cursor, LibreChat — reaches google-search-console-mcp through [mcp-hub](https://mcp-hub.ni-c.de): one
+container serves many stdio MCP servers over Streamable HTTP, with an OAuth 2.1 login
+behind a single password and long-lived tokens for the clients that cannot do OAuth. Its
+`/hub` endpoint puts every server behind six meta-tools, so one connector reaches all of
+them without N×tool schemas in the model's context, and it speaks both protocol revisions
+— a question this server asks travels through it to the person at the far end.
+
+Its `/config/mcp.json` uses Claude Code's format, so the entry is the one you already
+have:
+
+```json
+{
+  "mcpServers": {
+    "google-search-console": {
+      "command": "npx",
+      "args": ["-y", "@ni-c/google-search-console-mcp"],
+      "env": {
+        "GSC_SERVICE_ACCOUNT_KEY": "…",
+        "GSC_SITE_URL": "sc-domain:example.com"
+      }
+    }
+  }
+}
+```
+
+`allowTools` and `denyTools` there are the hub's **own** per-server filter, which is not
+the same thing as `*_ALLOW_TOOLS` in `env` — the difference, and the mistake it invites,
+are in the [client guide](https://google-search-console-mcp.ni-c.de/guide/clients#through-mcp-hub).
+
 ## Tools
 
 `site_url` is optional on every tool that takes it when `GSC_SITE_URL` is set.
+
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose.
+`query_search_analytics` keeps its rendered table in the text block and puts the
+rows themselves in the structured half; six tools that answered with a sentence
+now answer with fields too.
+
+Every tool that reports Google's data carries `untrusted: true` and
+`source: "search-console"` as fields. _"It is only search data"_ is exactly the
+wrong intuition: a search query is a string a member of the public typed into
+Google, and a page title comes from the crawled site. Six tools are without the
+marker, because their answer is a property this server was given and a fact it
+established: `add_site`, `delete_site`, `submit_sitemap`, `submit_sitemaps`,
+`delete_sitemap` and `unverify_site`.
 
 ### Properties and ownership
 
@@ -196,23 +248,23 @@ docker run --rm -i \
 | `list_sites`             | Every property this credential can see, with its permission level                                                      |
 | `get_site`               | One property — the way to settle which of the two spellings exists                                                     |
 | `add_site`               | Adds a property. Does **not** verify ownership                                                                         |
-| `delete_site`            | Removes a property and its history. Two-step                                                                           |
+| `delete_site` 👤         | Removes a property and its history                                                                                     |
 | `list_verified_sites`    | Sites this credential has proven ownership of, with all owners                                                         |
 | `get_verified_site`      | One of them by its opaque resource id                                                                                  |
 | `get_verification_token` | The token, and exactly where to put it. Claims nothing                                                                 |
 | `verify_site`            | Checks for the placed token and records ownership                                                                      |
-| `unverify_site`          | Gives up ownership. Two-step                                                                                           |
+| `unverify_site` 👤       | Gives up ownership                                                                                                     |
 | `update_site_owners`     | Replaces the owner list. `method: "patch"` uses PATCH, which behaves identically                                       |
 
 ### Sitemaps
 
-| Tool              | What it does                                                   |
-| ----------------- | -------------------------------------------------------------- |
-| `list_sitemaps`   | Submitted sitemaps, with download times, URL counts and errors |
-| `get_sitemap`     | One sitemap — where a submission's errors actually appear      |
-| `submit_sitemap`  | Submits or refreshes one. There is no separate update call     |
-| `submit_sitemaps` | Up to 50 in one call, with per-entry results                   |
-| `delete_sitemap`  | Removes one. Two-step                                          |
+| Tool                | What it does                                                   |
+| ------------------- | -------------------------------------------------------------- |
+| `list_sitemaps`     | Submitted sitemaps, with download times, URL counts and errors |
+| `get_sitemap`       | One sitemap — where a submission's errors actually appear      |
+| `submit_sitemap`    | Submits or refreshes one. There is no separate update call     |
+| `submit_sitemaps`   | Up to 50 in one call, with per-entry results                   |
+| `delete_sitemap` 👤 | Removes one                                                    |
 
 ### Search analytics and indexing
 
@@ -232,14 +284,18 @@ ever return an error, so there is not one.
 
 ## Safety
 
-**Four operations are two-step.** `delete_site`, `delete_sitemap`,
-`unverify_site` and `update_site_owners` refuse the first call and return a
-short-lived token bound to those exact arguments; the second call performs the
-operation. A confirmation issued for one property cannot be replayed against
-another, and the token only ever appears in a previous tool result, so a model
-cannot invent it. `update_site_owners` is in that list because the list it takes
-is the complete owner list afterwards — one well-formed call removes everyone
-else, and nothing here can put them back.
+**Four operations ask a person.** `delete_site`, `delete_sitemap`,
+`unverify_site` and `update_site_owners` raise a real dialog through MCP
+elicitation where the client supports it — one the model cannot answer on its
+behalf. Where it does not, they refuse the first call and return a short-lived
+token bound to those exact arguments, and say so rather than implying somebody
+approved. Either way the approval is bound to the property, so one issued for one
+cannot be replayed against another. `update_site_owners` is in that list because
+the list it takes is the complete owner list afterwards — one well-formed call
+removes everyone else, and nothing here can put them back.
+`ELICITATION=false` takes the fallback path deliberately; it never removes the
+guard. See
+[Asking a person](https://google-search-console-mcp.ni-c.de/guide/approval).
 
 **Everything from the APIs is marked untrusted.** Search queries are strings the
 public typed into Google; page titles and crawl diagnostics come from whoever
@@ -264,6 +320,11 @@ after start-up, never sent to a redirect target, and a rejected value is
 described rather than echoed — including when it is a key pasted into
 `GSC_ALLOW_TOOLS` by mistake.
 
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[google-search-console-mcp.ni-c.de](https://google-search-console-mcp.ni-c.de)** (source in [`docs/`](docs/)).
+
 ## Development
 
 ```sh
@@ -286,3 +347,14 @@ git tag -s v0.1.0 -m 'v0.1.0' && git push origin main v0.1.0
 
 `release.yml` runs the suite, publishes to npm with provenance through a trusted
 publisher, pushes the multi-arch image to GHCR and updates the MCP registry entry.
+
+## Contributing
+
+Issues, discussions and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). For vulnerabilities please use
+[private reporting](https://github.com/ni-c/google-search-console-mcp/security/advisories/new)
+rather than a public issue; the policy is in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © Willi Thiel

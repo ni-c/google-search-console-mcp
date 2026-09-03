@@ -64,7 +64,9 @@ describe('query_search_analytics', () => {
         period: 'last28days',
       }
     );
-    expect((stub.calls[0]?.body as { rowLimit: number }).rowLimit).toBe(100);
+    expect(
+      (stub.calls[0]?.body as { rowLimit: number } | undefined)?.rowLimit
+    ).toBe(100);
   });
 
   it('builds a dimension filter group from the flat filter list', async () => {
@@ -82,7 +84,8 @@ describe('query_search_analytics', () => {
       }
     );
     expect(
-      (stub.calls[0]?.body as Record<string, unknown>).dimensionFilterGroups
+      (stub.calls[0]?.body as Record<string, unknown> | undefined)
+        ?.dimensionFilterGroups
     ).toEqual([
       {
         groupType: 'or',

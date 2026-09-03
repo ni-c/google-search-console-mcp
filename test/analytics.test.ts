@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { escapeCell, renderAnalytics, summarise } from '../src/analytics.js';
+import { MAX_RESULT_BYTES } from '../src/result.js';
 
 const CONTEXT = {
   dimensions: ['query'],
@@ -140,6 +141,63 @@ describe('rendering the table', () => {
     const text = renderAnalytics({}, CONTEXT);
     expect(text).toContain('No data for this range');
     expect(text).toContain('2 to 3 days');
+  });
+
+  it('stays inside the result budget it is the reason for', () => {
+    /*
+     * `MAX_RESULT_BYTES` is documented as existing *because of this tool*, and
+     * this tool was the one that did not measure itself against it. The row cap
+     * bounds how many rows there are; nothing bounded how wide one is, and
+     * `page` and `query` values are arbitrary length. A page-by-query
+     * breakdown on a property with facet navigation is this shape, and it went
+     * to twenty times the budget in one result.
+     */
+    const rows = Array.from({ length: 1000 }, (_, index) => ({
+      keys: [
+        `https://example.com/shop?${'facet=value&'.repeat(15)}page=${index}`,
+        `${'a rather long search phrase '.repeat(5)}${index}`,
+      ],
+      clicks: index,
+      impressions: index * 10,
+      ctr: 0.1,
+      position: 4.2,
+    }));
+
+    const text = renderAnalytics(
+      { rows },
+      { ...CONTEXT, dimensions: ['page', 'query'], rowLimit: 25_000 }
+    );
+
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(
+      MAX_RESULT_BYTES
+    );
+    // Dropped rows are named, and with the offset that fetches them — a
+    // truncation nobody can act on is a quieter way of losing the data.
+    expect(text).toContain('rows are shown');
+    expect(text).toMatch(/start_row=\d+/);
+    // The totals still cover every returned row, so a cut table does not read
+    // as a smaller property.
+    expect(text).toContain('Totals over 1000 rows');
+  });
+
+  it('caps the width of a single cell', () => {
+    // The other half: one row of two 4 kB URLs is under every row limit there
+    // is and still oversized. The cap lives in escapeCell, the one place every
+    // dimension value passes through.
+    const long = 'https://example.com/' + 'x'.repeat(4000);
+    const cell = escapeCell(long);
+    expect(cell.length).toBeLessThan(250);
+    expect(cell.endsWith('…')).toBe(true);
+  });
+
+  it('does not leave a live backslash at the cut', () => {
+    // Cutting escaped text can land between a backslash and the character it
+    // escapes; a trailing `\` would then escape the cell separator and split
+    // the row — the very failure the escaping exists to prevent.
+    const cell = escapeCell('\\'.repeat(500));
+    const trailing = /\\+…$/.exec(cell)?.[0].length ?? 0;
+    expect((trailing - 1) % 2).toBe(0);
+    expect(cell.split(/(?<!\\)\|/)).toHaveLength(1);
   });
 
   it('handles a query with no dimensions', () => {

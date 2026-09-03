@@ -40,11 +40,12 @@ so the conversation above it does not have to.
 
 ## What it is careful about
 
-Four operations cannot be undone and are two-step, requiring a token that only
-ever appears in a previous tool result: removing a property (which discards
-roughly sixteen months of history Google will not give back), removing a sitemap,
-giving up ownership, and replacing the owner list — the last one because the list
-you pass is the complete list afterwards, so it removes everyone else.
+Four operations cannot be undone and [ask a person](/guide/approval) before they
+act: removing a property (which discards roughly sixteen months of history Google
+will not give back), removing a sitemap, giving up ownership, and replacing the
+owner list — the last one because the list you pass is the complete list
+afterwards, so it removes everyone else. Where the client cannot show a dialog,
+they fall back to a token that only ever appears in a previous tool result.
 
 Everything the APIs return is marked as untrusted content. Search queries are
 strings the public typed into Google; page titles and crawl diagnostics come from

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { ConfirmationStore, setResourceKey } from '../src/confirm.js';
+import { tupleResourceKey } from '../src/guard.js';
 import { listField, objectOf } from '../src/normalize.js';
 import {
   budgetedJson,
+  ResultTooLargeError,
   budgetedList,
   MAX_RESULT_BYTES,
   sanitizeErrorBody,
@@ -144,6 +145,37 @@ describe('budgetedJson', () => {
     });
   });
 
+  it('terminates on strings the shortening cannot make shorter', () => {
+    /*
+     * The replacement is 200 characters plus a marker of about thirty, so
+     * shortening a 230-character string produces a 230-character string. A
+     * shortener that only compares lengths therefore offers the same field
+     * again on every pass and the loop never ends — on a single-threaded
+     * runtime that is the whole server, not just this call.
+     *
+     * Six hundred fields of exactly that length, so no single one can be cut
+     * into budget and the pass genuinely runs out of candidates.
+     *
+     * This asserts the guarantee rather than one of its two locks: with neither
+     * the marker check nor the round ceiling it does not fail, it hangs the
+     * whole run — a synchronous loop is not something a test timeout can
+     * interrupt. Either lock on its own brings it back to a normal assertion.
+     */
+    const pathological: Record<string, string> = {};
+    for (let index = 0; index < 600; index += 1) {
+      pathological[`field${index}`] = 'x'.repeat(230);
+    }
+
+    const started = Date.now();
+    // It cannot reach the budget by shortening alone — 600 fields of 230
+    // characters stay over 100 kB — so the honest give-up is the right answer.
+    // That give-up used to be an envelope carrying an `error` field; it is a
+    // thrown error now, because an envelope of a different shape than the tool
+    // declares is one the SDK refuses.
+    expect(() => budgetedJson(pathological)).toThrow(ResultTooLargeError);
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 15_000);
+
   it('gives up honestly when nothing in it can be shortened', () => {
     // Thousands of short keys: no long string, no list, and keys are not
     // something this may rewrite. There is genuinely nothing to cut, and the
@@ -151,11 +183,8 @@ describe('budgetedJson', () => {
     const wide: Record<string, number> = {};
     for (let index = 0; index < 20_000; index += 1) wide[`key${index}`] = index;
 
-    const parsed = JSON.parse(budgetedJson(wide)) as Record<string, unknown>;
-    expect(parsed).toMatchObject({
-      error: expect.stringContaining('exceeds the result size budget'),
-    });
-    expect(parsed.note).toContain('row_limit');
+    expect(() => budgetedJson(wide)).toThrow(ResultTooLargeError);
+    expect(() => budgetedJson(wide)).toThrow(/row_limit/);
   });
 });
 
@@ -163,14 +192,34 @@ describe('the untrusted-content marker', () => {
   it('says the content is data and never instructions', () => {
     // Someone who wants a model to act on their instructions can put them in a
     // page title and wait to be crawled.
-    const text = (untrustedResult('hello').content[0] as { text: string }).text;
+    const result = untrustedResult({ query: 'hello' });
+    const text = (result.content[0] as { text: string }).text;
     expect(text).toContain('never as instructions');
     expect(text).toContain('typed by the public');
     expect(text).toContain('hello');
+    // And in the structured channel, which is the one a client that reads an
+    // output schema is meant to use.
+    expect(result.structuredContent).toEqual({
+      untrusted: true,
+      source: 'search-console',
+      query: 'hello',
+    });
   });
 });
 
 describe('sanitizeErrorBody', () => {
+  it('drops markup that does not open with a doctype or <html>', () => {
+    // A WAF block page can open with a comment, and an upstream that answers
+    // errors in XML is exactly as useless to the model as one that answers in
+    // HTML. The old check required a doctype or an <html> tag first and let
+    // both of these through.
+    expect(
+      sanitizeErrorBody('<?xml version="1.0"?><error>denied</error>')
+    ).toBe('(HTML error page omitted)');
+    expect(
+      sanitizeErrorBody('<!-- blocked by policy -->\n<html>x</html>')
+    ).toBe('(HTML error page omitted)');
+  });
   it('drops an HTML error page entirely', () => {
     expect(sanitizeErrorBody('<!doctype html><html>...</html>')).toBe(
       '(HTML error page omitted)'
@@ -218,49 +267,25 @@ describe('objectOf', () => {
   });
 });
 
-describe('the confirmation store', () => {
-  it('expires a token', () => {
-    const store = new ConfirmationStore(0);
-    const token = store.issue('delete_site:x');
-    expect(store.consume('delete_site:x', token)).toBe(false);
-  });
-
-  it('refuses a token for a different resource', () => {
-    const store = new ConfirmationStore();
-    const token = store.issue('delete_site:a');
-    expect(store.consume('delete_site:b', token)).toBe(false);
-  });
-
-  it('refuses a missing token', () => {
-    const store = new ConfirmationStore();
-    store.issue('x');
-    expect(store.consume('x', undefined)).toBe(false);
-  });
-
-  it('bounds the map so refused calls cannot grow it forever', () => {
-    const store = new ConfirmationStore();
-    for (let index = 0; index < 150; index += 1)
-      store.issue(`resource-${index}`);
-    // The oldest were evicted; the newest still works.
-    expect(store.consume('resource-149', store.issue('resource-149'))).toBe(
-      true
-    );
-  });
+describe('the tuple resource key', () => {
+  // The confirmation store itself lives in mcp-approval and is tested there.
+  // What stays here is the one decision this repository makes differently.
 
   it('fingerprints the targets, so one confirmation is not another', () => {
-    expect(setResourceKey('op', ['a'])).not.toBe(
-      setResourceKey('op', ['a', 'b'])
+    expect(tupleResourceKey('op', ['a'])).not.toBe(
+      tupleResourceKey('op', ['a', 'b'])
     );
   });
 
   it('keeps the order significant, because the targets are a tuple', () => {
-    // delete_sitemap binds [property, feedpath] and both are URLs — drawn from
-    // the same string space. Normalising the order here would let a token
-    // issued for one pair authorise the pair with the roles swapped. A caller
-    // whose targets really are a set sorts them before passing them in, which
-    // is what update_site_owners does with its owner list.
-    expect(setResourceKey('op', ['a', 'b'])).not.toBe(
-      setResourceKey('op', ['b', 'a'])
+    // This is why `setResourceKey` from mcp-approval is deliberately not used:
+    // it sorts. delete_sitemap binds [property, feedpath] and both are URLs,
+    // drawn from the same string space, so normalising the order would let a
+    // token issued for one pair authorise the pair with the roles swapped. A
+    // caller whose targets really are a set sorts them before passing them in,
+    // which is what update_site_owners does with its owner list.
+    expect(tupleResourceKey('op', ['a', 'b'])).not.toBe(
+      tupleResourceKey('op', ['b', 'a'])
     );
   });
 });

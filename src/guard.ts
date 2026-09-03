@@ -1,11 +1,30 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { createHash } from 'node:crypto';
+import type {
+  CallToolResult,
+  InputRequiredResult,
+  McpServer,
+  ServerContext,
+} from '@modelcontextprotocol/server';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 
-import {
-  confirmationPrompt,
-  setResourceKey,
-  type ConfirmationStore,
-} from './confirm.js';
-import { errorResult, textResult } from './result.js';
+import { errorResult } from './result.js';
+
+/**
+ * A key binding the token to an ordered tuple of targets.
+ *
+ * Deliberately **not** `setResourceKey` from mcp-approval, which sorts: the
+ * targets here are a tuple, not a set. `delete_sitemap` binds a property and a
+ * feedpath in that order, and `update_site_owners` puts the property first and
+ * sorts only the owner list after it. Sorting the whole array would fold the
+ * property into that run and make two different calls share a key.
+ */
+export function tupleResourceKey(operation: string, targets: string[]): string {
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(targets))
+    .digest('hex')
+    .slice(0, 16);
+  return `${operation}:${fingerprint}`;
+}
 
 /**
  * Wraps an operation that must not happen on the first call.
@@ -31,6 +50,9 @@ import { errorResult, textResult } from './result.js';
  * confirmation; a confirmation whose subject can rewrite the sentence is worse.
  */
 export async function guarded(
+  server: McpServer,
+  ctx: ServerContext,
+  approval: Approver,
   confirmations: ConfirmationStore,
   options: {
     tool: string;
@@ -42,29 +64,29 @@ export async function guarded(
     confirmToken: string | undefined;
   },
   perform: () => Promise<CallToolResult>
-): Promise<CallToolResult> {
-  const resource = setResourceKey(options.tool, options.targets);
+): Promise<CallToolResult | InputRequiredResult> {
+  const outcome = await approval.requestApproval(server, ctx, confirmations, {
+    what: options.what,
+    consequence: options.consequence,
+    resourceKey: tupleResourceKey(options.tool, options.targets),
+    token: options.confirmToken,
+    toolName: options.tool,
+    title: `${options.what[0]?.toUpperCase()}${options.what.slice(1)}?`,
+    hint: 'Tick to go ahead, leave it to cancel.',
+    ...(options.target === undefined
+      ? {}
+      : { details: [{ label: 'Target', value: options.target }] }),
+  });
 
-  if (confirmations.consume(resource, options.confirmToken)) {
-    return perform();
+  if (outcome.decision === 'approved') return perform();
+  if (outcome.decision === 'declined') {
+    return errorResult(`The user declined. ${options.tool} did nothing.`);
   }
-
-  if (options.confirmToken !== undefined) {
-    return errorResult(
-      'The confirmation token is invalid, expired or was issued for different ' +
-        `arguments. Call ${options.tool} without a token to get a new one.`
-    );
-  }
-
-  const token = confirmations.issue(resource);
-  return textResult(
-    confirmationPrompt({
-      what: options.what,
-      consequence: options.consequence,
-      target: options.target,
-      toolName: options.tool,
-      token,
-      ttlMinutes: confirmations.ttlMinutes,
-    })
-  );
+  // A token that was sent and did not match is refused with the reason rather
+  // than answered with a fresh prompt: it means the call carried a
+  // confirmation issued for different arguments, which is exactly what the
+  // resource key is there to catch. The sentence comes from the library so
+  // every server in the fleet refuses in the same words.
+  if (outcome.decision === 'rejected') return errorResult(outcome.reason);
+  return outcome.result;
 }

@@ -123,7 +123,10 @@ describe('add_site', () => {
     const result = await call(await connect(), 'add_site', {
       site_url: 'sc-domain:new.test',
     });
-    expect(textOf(result)).toContain('was added to Search Console');
+    // It answers with fields now, not a sentence — the sentence was what a
+    // caller had to parse to find out whether the property was created.
+    expect(result.structuredContent).toMatchObject({ added: true });
+    expect(textOf(result)).toContain('not verified yet');
     expect(textOf(result)).toContain('not verified yet');
   });
 
@@ -144,6 +147,58 @@ describe('add_site', () => {
 });
 
 describe('delete_site', () => {
+  it('asks the user, and removes the property once they accept', async () => {
+    // The point of the approval path: a client that can put a question in front
+    // of a person gets asked, instead of a token that only proves the same call
+    // was made twice.
+    const stub = stubFetch({
+      [`DELETE ${SITES}/sc-domain%3Aexample.com`]: { status: 204 },
+    });
+    const client = await connect({}, 'accept');
+
+    const result = await call(client, 'delete_site', { site_url: SITE });
+    expect(client.prompts).toHaveLength(1);
+    expect(client.prompts[0]).toContain('16 months');
+    expect(stub.calls).toHaveLength(1);
+    expect(result.structuredContent).toMatchObject({ removed: true });
+  });
+
+  it('removes nothing when the user declines', async () => {
+    const stub = stubFetch({
+      [`DELETE ${SITES}/sc-domain%3Aexample.com`]: { status: 204 },
+    });
+    const client = await connect({}, 'decline');
+
+    const result = await call(client, 'delete_site', { site_url: SITE });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain('declined');
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it('removes nothing when the user closes the dialog', async () => {
+    // Cancel is not a yes. For an irreversible removal the only safe reading of
+    // "no answer" is no.
+    const stub = stubFetch({
+      [`DELETE ${SITES}/sc-domain%3Aexample.com`]: { status: 204 },
+    });
+    const client = await connect({}, 'cancel');
+
+    const result = await call(client, 'delete_site', { site_url: SITE });
+    expect(result.isError).toBe(true);
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it('offers no token to a client it can ask properly', async () => {
+    // The control that makes the three above mean something: without it, a
+    // server that silently never asked would still pass every token test here,
+    // because that path is unchanged.
+    stubFetch({ [`DELETE ${SITES}/sc-domain%3Aexample.com`]: { status: 204 } });
+    const client = await connect({}, 'decline');
+
+    const result = await call(client, 'delete_site', { site_url: SITE });
+    expect(textOf(result)).not.toContain('confirm_token=');
+  });
+
   it('refuses the first call and performs the second', async () => {
     const stub = stubFetch({
       [`DELETE ${SITES}/sc-domain%3Aexample.com`]: { status: 204 },
@@ -159,7 +214,7 @@ describe('delete_site', () => {
       confirm_token: tokenOf(first),
     });
     expect(stub.calls).toHaveLength(1);
-    expect(textOf(second)).toContain('was removed');
+    expect(second.structuredContent).toMatchObject({ removed: true });
   });
 
   it('will not accept a token issued for a different property', async () => {

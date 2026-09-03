@@ -53,6 +53,14 @@ export interface Config {
   /** When true, only the read tools are registered at all. */
   readOnly: boolean;
   /**
+   * Whether a client that *can* show a dialog is asked before a guarded tool
+   * acts. `ELICITATION=false` turns the dialog off — the guard stays and falls
+   * back to the two-call token, so there is no setting in which a guarded call
+   * goes unannounced.
+   */
+  elicitation: boolean;
+
+  /**
    * Raw value of `GSC_ALLOW_TOOLS` — comma-separated tool names, `list_*`
    * prefixes, or `essential`. Kept unparsed on purpose: this file is a mirror of
    * the environment, and the names can only be checked against the tool
@@ -83,6 +91,30 @@ export function missingConfigMessage(): string {
 }
 
 /**
+ * Reads `ELICITATION` — deliberately unprefixed, and deliberately fatal on
+ * anything it does not recognise.
+ *
+ * Unprefixed: environment variables are process-wide, so this is one switch for
+ * every server in the same environment. That is also its risk, which is why a
+ * server started with it off says so on its startup line.
+ *
+ * Fatal: this is the first variable of the family that defaults to *on*. The
+ * others fail open on a typo, which is the safe direction for them. Here a typo
+ * would leave the dialog running while the operator believes it is off — and an
+ * operator who believes that has no way to find out. It goes through `fail`
+ * like every other refusal in this file, so there is one exit rather than two.
+ */
+export function parseElicitation(raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (value === undefined || value === '' || value === 'true') return true;
+  if (value === 'false') return false;
+  return fail(
+    `ELICITATION must be "true" or "false" — got "${raw}". ` +
+      'Refusing to start rather than guess.'
+  );
+}
+
+/**
  * Reads the configuration from environment variables.
  *
  * Missing credentials are only a warning. A *malformed* configuration still
@@ -90,11 +122,20 @@ export function missingConfigMessage(): string {
  * fail later, once per call, with an error that says nothing about the cause.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const readOnly = env.GSC_READ_ONLY === 'true';
+  // Tolerant on purpose: this is a protection, not a permission, and
+  // `GSC_READ_ONLY=1` is what a Docker Compose file or a systemd unit is most
+  // likely to say. Under an exact `=== 'true'` that spelling left every write
+  // tool registered while the operator believed the server could not write — a
+  // failure that announces itself only by a property being deleted. Matches the
+  // fleet: woodpecker-ci-mcp and hetzner-dns-mcp read their switch this way.
+  const readOnly = /^(1|true|yes)$/i.test(env.GSC_READ_ONLY?.trim() ?? '');
   const allowTools = env.GSC_ALLOW_TOOLS;
   const denyTools = env.GSC_DENY_TOOLS;
 
   const auth = loadAuth(env);
+  // After loadAuth, deliberately: that is where the credentials are wiped from
+  // the environment, and this one can exit the process.
+  const elicitation = parseElicitation(env.ELICITATION);
   const defaultSiteUrl = loadDefaultSite(env);
   const allowedSites = loadAllowedSites(env);
 
@@ -117,6 +158,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     defaultSiteUrl,
     allowedSites,
     readOnly,
+    elicitation,
     allowTools,
     denyTools,
   };
@@ -153,16 +195,63 @@ function loadAuth(env: NodeJS.ProcessEnv): Auth | undefined {
   delete env.GSC_REFRESH_TOKEN;
 
   if (rawKey !== undefined || keyFile !== undefined) {
+    // A variable that is present but empty is a misconfiguration, not an
+    // absence — and it is the shape a compose file produces on its own:
+    // `GSC_SERVICE_ACCOUNT_KEY_FILE=${GSC_KEY_FILE}` with GSC_KEY_FILE unset
+    // substitutes the empty string rather than dropping the variable.
+    //
+    // Left alone, an empty path reached google-auth-library as
+    // `{ keyFile: '' }`, where it is falsy and therefore ignored: the library
+    // then searched for application default credentials and the server ran as
+    // whatever the machine happens to be logged into, while its startup line
+    // still said "service-account". That is precisely the silent promotion the
+    // ordering in this function exists to prevent, so it stops here instead.
+    for (const [name, value] of [
+      ['GSC_SERVICE_ACCOUNT_KEY', rawKey],
+      ['GSC_SERVICE_ACCOUNT_KEY_FILE', keyFile],
+    ] as const) {
+      if (value !== undefined && value.trim().length === 0) {
+        fail(
+          `${name} is set but empty. An empty value is not the same as an unset ` +
+            'one: it would fall through to whatever ambient credentials this ' +
+            'machine has, while the server reported a service account. Give it ' +
+            'a value, or remove the variable entirely.'
+        );
+      }
+    }
     if (rawKey !== undefined && keyFile !== undefined) {
       fail(
         'GSC_SERVICE_ACCOUNT_KEY and GSC_SERVICE_ACCOUNT_KEY_FILE are both set — ' +
           'set exactly one, so it is unambiguous which key is in use.'
       );
     }
+    // Two named identities are the same ambiguity as two service account keys,
+    // and the answer is the same: refuse rather than pick. Silently preferring
+    // the service account would mean an operator who added an OAuth triple sees
+    // no error, no change in behaviour, and no way to tell which of the two the
+    // results came from. Ambient credentials are a different case and stay
+    // allowed alongside — GOOGLE_APPLICATION_CREDENTIALS is set on half the
+    // machines this could run on, and nobody set it for this server.
+    const oauthNames = [
+      clientId === undefined ? undefined : 'GSC_CLIENT_ID',
+      clientSecret === undefined ? undefined : 'GSC_CLIENT_SECRET',
+      refreshToken === undefined ? undefined : 'GSC_REFRESH_TOKEN',
+    ].filter((name): name is string => name !== undefined);
+    if (oauthNames.length > 0) {
+      fail(
+        `a service account key and OAuth2 variables (${oauthNames.join(', ')}) ` +
+          'are set at the same time — set exactly one credential, so the identity ' +
+          'this server acts as is not decided by an order nobody read. The OAuth ' +
+          'variables would otherwise have been ignored without a word.'
+      );
+    }
     return {
       mode: 'service-account',
       key: rawKey === undefined ? undefined : decodeKey(rawKey),
-      keyFile,
+      // Trimmed: a path that arrived with a trailing newline from a compose
+      // file or a `$(cat …)` is the same path, and an untrimmed one fails much
+      // later with ENOENT on a name that looks correct in the message.
+      keyFile: keyFile?.trim(),
     };
   }
 

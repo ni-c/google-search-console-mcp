@@ -6,8 +6,8 @@ import {
   scopesFor,
   type Service,
 } from '../src/auth.js';
-import { registeredTools, servicesFor } from '../src/server.js';
-import { buildToolFilter } from '../src/tool-filter.js';
+import { registeredTools, servicesFor, toolFilterFor } from '../src/server.js';
+
 import { ALL_TOOLS, READ_TOOLS } from '../src/tools/catalogue.js';
 import { testConfig } from './harness.js';
 
@@ -63,7 +63,7 @@ describe('which scopes a given configuration ends up asking for', () => {
   ): string[] {
     const config = testConfig(overrides);
     return scopesFor(
-      servicesFor(registeredTools(config, buildToolFilter(config))),
+      servicesFor(registeredTools(config, toolFilterFor(config))),
       config.readOnly
     );
   }
@@ -98,16 +98,16 @@ describe('which scopes a given configuration ends up asking for', () => {
 describe('registeredTools', () => {
   it('is every tool with no filter', () => {
     const config = testConfig();
-    expect(registeredTools(config, buildToolFilter(config)).size).toBe(
+    expect(registeredTools(config, toolFilterFor(config)).size).toBe(
       ALL_TOOLS.length
     );
   });
 
   it('drops the write tools before the filter is applied', () => {
     const config = testConfig({ readOnly: true });
-    expect(
-      [...registeredTools(config, buildToolFilter(config))].sort()
-    ).toEqual([...READ_TOOLS].sort());
+    expect([...registeredTools(config, toolFilterFor(config))].sort()).toEqual(
+      [...READ_TOOLS].sort()
+    );
   });
 });
 
@@ -150,6 +150,25 @@ describe('the token source for each credential kind', () => {
       []
     );
     expect(fromFile.describe()).toContain('/keys/robot.json');
+  });
+
+  it('refuses a service account with no key and no key file', () => {
+    /*
+     * The second lock on the door config.ts bolts. google-auth-library reads
+     * `opts.keyFilename || opts.keyFile`, so `keyFile: ''` is not a path that
+     * does not exist — it is no path at all, and the library falls through to
+     * application default credentials. Nothing downstream would report that:
+     * the server keeps working, from a different identity than the one it
+     * printed at startup.
+     */
+    for (const keyFile of ['', '   ', undefined]) {
+      expect(() =>
+        createTokenSource(
+          { mode: 'service-account', key: undefined, keyFile },
+          []
+        )
+      ).toThrow(/application default credentials/);
+    }
   });
 
   it('describes an OAuth credential without its secret', () => {

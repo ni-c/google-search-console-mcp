@@ -89,7 +89,12 @@ describe('what a caller can put into an outbound request', () => {
     });
 
     const put = stub.calls.find((entry) => entry.method === 'PUT');
-    expect((put?.body as Record<string, unknown>).evil).toBeUndefined();
+    // Asserted separately: with an optional chain on the line below, a PUT that
+    // never happened would read as "evil was not forwarded" and pass.
+    expect(put, 'the update must have been sent').toBeDefined();
+    expect(
+      (put?.body as Record<string, unknown> | undefined)?.evil
+    ).toBeUndefined();
   });
 });
 
@@ -110,7 +115,9 @@ describe('the confirmation prompt', () => {
     const text = textOf(result);
 
     expect(text).toContain(`This will remove a sitemap from ${SITE}`);
-    expect(text).toContain('as data');
+    // The wording is the library's, and it makes the same promise: the line
+    // says these values are the caller's, not the server's.
+    expect(text).toContain('supplied by the caller, not by this server');
     expect(text).toContain('https://example.com/sitemap.xml');
     // The URL must not be inside the instruction sentence itself.
     const sentence = text.slice(0, text.indexOf('.'));

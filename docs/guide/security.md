@@ -28,24 +28,36 @@ The one gap worth naming: Site Verification has no read-only scope. Google's
 there need the full scope. That is a limit of Google's scope design, not an
 oversight here.
 
-## Irreversible operations are two-step
+## Irreversible operations ask a person
 
-Three tools refuse their first call and return a short-lived token bound to those
-exact arguments:
+Four tools put the question to a **person** before they act, through MCP
+elicitation — a dialog the model cannot answer on its behalf, and which nothing
+proceeds without:
 
 | Tool | What it costs |
 | --- | --- |
 | `delete_site` | Roughly 16 months of performance history, discarded. Re-adding starts empty |
 | `unverify_site` | Owner access to the site; every property for it drops to 403, and the Indexing API stops working |
-| `delete_sitemap` | Submission history and error report. The least severe of the three — `submit_sitemap` puts it back |
+| `update_site_owners` | Everyone not in the list you pass. It is the complete owner list afterwards |
+| `delete_sitemap` | Submission history and error report. The least severe of the four — `submit_sitemap` puts it back |
 
 A plain boolean `confirm` parameter would not do. The model could set it on the
 first call, or be talked into it by instructions hidden in upstream content — and
-this server hands the model plenty of that. A random token that only ever appears
-in a *previous* tool result cannot be guessed.
+this server hands the model plenty of that.
 
-The token is bound to a resource key, so a confirmation issued for one property
-cannot be replayed against another, and it is single-use.
+Where the client cannot show a dialog, the tool refuses its first call and
+returns a short-lived, single-use token bound to those exact arguments. That
+token only ever appears in a *previous* tool result, so it cannot be guessed — but
+be clear about what it proves, because this server is: **the call was made twice
+with the same arguments, and nothing more.** A model can read it out of the first
+result and quote it back in the same turn. The fallback text says so rather than
+implying somebody approved, and names whether it was the client that could not be
+asked or the operator who switched the dialog off with `ELICITATION=false`.
+
+Either way the approval is bound to a resource key, so one issued for one
+property cannot be replayed against another.
+
+See [Asking a person](/guide/approval).
 
 ## Untrusted content
 
