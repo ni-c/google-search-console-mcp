@@ -1,6 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { record, truncationNote, untrustedFields } from '../output-schema.js';
+import {
+  markedRecord,
+  record,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 import {
   budget,
   budgetedList,
@@ -56,7 +61,8 @@ export function registerVerificationTools(
           truncated: truncationNote,
           verified_sites: z.array(record),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     () =>
       run(async () => {
@@ -104,7 +110,7 @@ export function registerVerificationTools(
         'Returns one verified site and the email addresses of all its owners.',
       inputSchema: z.object({ id: idSchema() }),
       annotations: READ_ONLY,
-      outputSchema: record.extend(untrustedFields),
+      outputSchema: markedRecord,
     },
     ({ id }) =>
       run(async () =>
@@ -223,7 +229,10 @@ export function registerVerificationTools(
         type: z.string(),
         method: z.string(),
         verified: z.literal(true),
-        resourceId: z.unknown().nullable(),
+        resourceId: z.union([
+          z.string().describe("Google's id for the verified resource."),
+          z.null(),
+        ]),
         owners: z
           .string()
           .describe('Other people’s addresses, as Google has them.'),
@@ -254,7 +263,7 @@ export function registerVerificationTools(
           type: site.type,
           method: chosen,
           verified: true,
-          resourceId: result.id ?? null,
+          resourceId: typeof result.id === 'string' ? result.id : null,
           owners: listOwners(result),
           note:
             'This is ownership, not a Search Console property. If the property ' +

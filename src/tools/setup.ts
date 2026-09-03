@@ -106,7 +106,10 @@ export function registerSetupTools(
         stage: z.string().describe('Where this property is in the setup.'),
         exists: z.boolean(),
         owned: z.boolean(),
-        permissionLevel: z.string().nullable(),
+        permissionLevel: z.union([
+          z.string().describe('What the credential may do on this property.'),
+          z.null(),
+        ]),
         steps: z.array(z.string()),
       }),
     },

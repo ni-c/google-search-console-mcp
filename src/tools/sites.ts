@@ -12,7 +12,12 @@ import {
   siteUrlSchema,
 } from '../schema.js';
 import { z } from 'zod';
-import { record, truncationNote, untrustedFields } from '../output-schema.js';
+import {
+  markedRecord,
+  record,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 
 import { pathSegment } from '../api.js';
 import { READ_ONLY } from './annotations.js';
@@ -62,7 +67,8 @@ export function registerSiteTools(
           truncated: truncationNote,
           sites: z.array(record),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     () =>
       run(async () => {
@@ -111,7 +117,7 @@ export function registerSiteTools(
         'properties holding separate data.',
       inputSchema: z.object({ site_url: siteUrlSchema(config) }),
       annotations: READ_ONLY,
-      outputSchema: record.extend(untrustedFields),
+      outputSchema: markedRecord,
     },
     ({ site_url }) =>
       run(async () => {

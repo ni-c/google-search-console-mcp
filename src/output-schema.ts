@@ -8,6 +8,13 @@ import { z } from 'zod';
  * not this server's to promise, and an output schema is validated before the
  * answer goes out — a strict shape would turn a field Google adds into a tool
  * that fails outright.
+ *
+ * Every open object here carries `.meta({ additionalProperties: true })`. Left
+ * to itself zod writes "accepts anything" as `"additionalProperties": {}` — an
+ * empty schema, legal and meaning exactly the same as `true`, but the spelling
+ * some MCP clients refuse or mishandle. `meta` is merged into the emitted JSON
+ * Schema and nothing else, so the wire says `true` while the runtime stays as
+ * permissive as it has to be.
  */
 
 /** The marker every result built from Google's data carries. */
@@ -30,3 +37,14 @@ export const truncationNote = z
 
 /** A record Google returned, passed through. */
 export const record = z.looseObject({}).meta({ additionalProperties: true });
+
+/**
+ * The same record, marked as upstream content.
+ *
+ * Its own `meta` and not just the one on `record`: `extend` builds a new schema
+ * and does not carry the parent's metadata over, so an extended `record` would
+ * go back to spelling `additionalProperties` as `{}`.
+ */
+export const markedRecord = record
+  .extend(untrustedFields)
+  .meta({ additionalProperties: true });

@@ -64,7 +64,8 @@ export function registerInspectionTools(
           ...untrustedFields,
           inspectionResult: record.optional(),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ site_url, inspection_url, language_code }) =>
       run(async () => {
@@ -105,7 +106,8 @@ export function registerInspectionTools(
           truncated: truncationNote,
           results: z.array(record),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ site_url, inspection_urls, language_code }) =>
       run(async () => {

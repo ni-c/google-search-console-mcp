@@ -1,6 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { record, truncationNote, untrustedFields } from '../output-schema.js';
+import {
+  markedRecord,
+  record,
+  truncationNote,
+  untrustedFields,
+} from '../output-schema.js';
 import {
   budgetedList,
   budgetedUntrustedResult,
@@ -71,7 +76,8 @@ export function registerSitemapTools(
           truncated: truncationNote,
           sitemaps: z.array(record),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ site_url, sitemap_index }) =>
       run(async () => {
@@ -114,7 +120,7 @@ export function registerSitemapTools(
         ),
       }),
       annotations: READ_ONLY,
-      outputSchema: record.extend(untrustedFields),
+      outputSchema: markedRecord,
     },
     ({ site_url, feedpath }) =>
       run(async () => {
@@ -213,7 +219,8 @@ export function registerSitemapTools(
           truncated: truncationNote,
           results: z.array(record),
         })
-        .catchall(z.unknown()),
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ site_url, feedpaths }) =>
       run(async () => {
