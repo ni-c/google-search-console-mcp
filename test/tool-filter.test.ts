@@ -11,6 +11,7 @@ import {
   WRITE_TOOLS,
 } from '../src/tools/catalogue.js';
 import { connect, testConfig } from './harness.js';
+import { expectPortableToolSchemas } from 'mcp-integration-harness';
 
 /**
  * The catalogue is a hand-maintained list, and this file is what stops it
@@ -76,6 +77,17 @@ describe('the catalogue and the server agree', () => {
       // depending on who asked.
       expect(tool.outputSchema?.type, tool.name).toBe('object');
     }
+  });
+
+  it('advertises schemas every client can read', async () => {
+    // Legal JSON Schema is not enough. `{}` in a schema position — what zod
+    // writes for `looseObject`, `catchall` and `z.unknown()` — and `type` as an
+    // array are both refused, or silently dropped, by some clients. Neither is
+    // a contract: each has an equivalent spelling that says the same thing, so
+    // there is nothing here to excuse.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expectPortableToolSchemas(tools);
   });
 
   it('marks every result built from Google’s data as untrusted', async () => {
