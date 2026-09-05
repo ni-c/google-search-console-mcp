@@ -8,6 +8,7 @@
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fgoogle--search--console--mcp-blue)](https://github.com/ni-c/google-search-console-mcp/pkgs/container/google-search-console-mcp)
 [![docs](https://img.shields.io/badge/docs-google--search--console--mcp.ni--c.de-informational)](https://google-search-console-mcp.ni-c.de)
 [![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
+[![Glama](https://glama.ai/mcp/servers/ni-c/google-search-console-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/google-search-console-mcp)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
