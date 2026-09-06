@@ -34,6 +34,6 @@ describe('server identity', () => {
     // channel that arrives before the first tool call.
     const instructions = (await connect()).getInstructions();
     expect(instructions).toBeTruthy();
-    expect(instructions).toMatch(/never (?:follow |as )instructions/i);
+    expect(instructions).toMatch(/never\s+(?:follow|as)\s+instructions/i);
   });
 });
