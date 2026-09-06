@@ -78,8 +78,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the life of the connection, exactly as a hand-wired
   `StdioServerTransport` served it.
 
-## [Unreleased]
-
 - `GSC_READ_ONLY` now also accepts `1` and `yes`, in any casing or padding —
   the spellings a compose file or a systemd unit is most likely to use. Under
   the previous exact match on `true` they left every write tool registered while
