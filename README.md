@@ -1,6 +1,7 @@
 # google-search-console-mcp
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/google-search-console-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/google-search-console-mcp/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ni-c/google-search-console-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/ni-c/google-search-console-mcp)
 [![npm version](https://img.shields.io/npm/v/%40ni-c%2Fgoogle-search-console-mcp)](https://www.npmjs.com/package/@ni-c/google-search-console-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/%40ni-c%2Fgoogle-search-console-mcp)](https://www.npmjs.com/package/@ni-c/google-search-console-mcp)
 [![node](https://img.shields.io/node/v/%40ni-c%2Fgoogle-search-console-mcp)](https://nodejs.org)
