@@ -33,6 +33,8 @@ five than from 21 — see
   <img src="https://google-search-console-mcp.ni-c.de/architecture.svg" alt="An MCP client talks to google-search-console-mcp over stdio; the server calls the Search Console, Site Verification and Indexing APIs over HTTPS." width="800">
 </picture>
 
+![Listing the tools, narrowing them to the essential preset, and the startup abort a mistyped tool name produces](https://google-search-console-mcp.ni-c.de/demo.gif)
+
 ## What makes it different
 
 **It can actually create a working property.** Getting one takes four steps in a

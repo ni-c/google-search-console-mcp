@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A demo GIF in the README and on the documentation home page, recorded from
+  `docs/demo.tape` with no credentials: the tool list, the same list narrowed by
+  the `essential` preset, and the startup abort a mistyped tool name produces.
+
 ### Changed
 
 - The tool reference marks the `essential` preset and the tools that ask a

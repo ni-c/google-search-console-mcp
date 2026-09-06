@@ -85,6 +85,8 @@ features:
 <figcaption>The server talks to three separate Google services. Search Console alone cannot create a working property — ownership lives in the Site Verification API, on a different host, behind a different scope, naming the same site a different way.</figcaption>
 </figure>
 
+![Listing the tools, narrowing them to the essential preset, and the startup abort a mistyped tool name produces](/demo.gif)
+
 ## 21 tools, or five
 
 The tool list is not fixed. `GSC_ALLOW_TOOLS=essential` narrows it to the five
