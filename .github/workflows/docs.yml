@@ -82,11 +82,10 @@ jobs:
   # domain survives every deploy.
   deploy:
     needs: build
-    # Private repositories do not deploy. Pages is a public surface, and a
-    # CNAME plus the first Let's Encrypt certificate puts the subdomain in the
-    # public CT log within seconds — which is publication, whatever the
-    # repository's visibility says. The gate is a no-op once the repo is public
-    # and starts working by itself the day it becomes one.
+    # Skips while the repository is private: there is no Pages site to deploy to
+    # yet, and the gate starts working by itself the day it goes public. Leave it
+    # in place even once it is public, where it is a no-op — it is what lets this
+    # workflow land before the repository does.
     if: ${{ github.event_name != 'pull_request' && !github.event.repository.private }}
     runs-on: ubuntu-latest
     permissions:
