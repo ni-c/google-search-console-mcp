@@ -115,6 +115,8 @@ ownership, and a site can be in either without the other.
 
 ### `list_sites` ★ read
 
+**essential**
+
 Every property this credential can see, with its permission level. The first call
 to make when anything returns 403 — an empty list means the identity was never
 added to any property.
@@ -124,6 +126,8 @@ added to any property.
 for it returns 403.
 
 ### `get_site` ★ read
+
+**essential**
 
 One property and this credential's permission on it. The way to settle which of
 the two spellings exists.
@@ -146,6 +150,8 @@ Ownership verification is unaffected.
 ## Sitemaps
 
 ### `list_sitemaps` ★ read
+
+**essential**
 
 Submitted sitemaps with download times, per-content-type URL counts, warnings and
 errors.
@@ -190,6 +196,8 @@ The least severe of the four guarded operations.
 
 ### `query_search_analytics` ★ read
 
+**essential**
+
 The whole Performance report: clicks, impressions, CTR and average position by
 any combination of dimensions.
 
@@ -228,6 +236,8 @@ average of that column is not a meaningful number.
 ## URL inspection and indexing
 
 ### `inspect_url` ★ read
+
+**essential**
 
 What Google knows about one URL: index verdict, coverage state, last crawl,
 robots.txt state, the canonical Google chose versus the one declared, mobile
