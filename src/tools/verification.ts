@@ -407,7 +407,7 @@ export function registerVerificationTools(
             // The id is positional and the owners are a set, so the set half is
             // sorted and the id is not: a token must survive the same list in a
             // different order, and must not survive a different id.
-            targets: [id, ...[...owners].sort()],
+            targets: [id, ...owners.toSorted()],
             what: `replace the entire owner list of ${property}`,
             consequence:
               'Everyone not in the new list loses ownership immediately, and ' +
