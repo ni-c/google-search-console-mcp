@@ -1,13 +1,17 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { record, untrustedFields } from '../output-schema.js';
+import { record, truncationNote, untrustedFields } from '../output-schema.js';
 
-import { renderAnalytics, type AnalyticsResponse } from '../analytics.js';
+import { renderAnalytics, shapeRows } from '../analytics.js';
 import { READ_ONLY } from './annotations.js';
-import { pathSegment } from '../api.js';
+import { MAX_RESPONSE_BYTES, pathSegment } from '../api.js';
 import { PERIODS, resolveDateRange } from '../dates.js';
-import { objectOf } from '../normalize.js';
-import { run, untrustedTextResult } from '../result.js';
+import {
+  byteLength,
+  MAX_RESULT_BYTES,
+  run,
+  untrustedTextResult,
+} from '../result.js';
 import { isoDate, resolveSite, siteUrlSchema } from '../schema.js';
 import type { ToolContext } from './context.js';
 
@@ -32,6 +36,13 @@ const DIMENSIONS = [
 /** The API's ceiling. Not this server's default — see `row_limit` below. */
 const MAX_ROW_LIMIT = 25_000;
 const DEFAULT_ROW_LIMIT = 100;
+
+/** Room for the fields beside `rows` in the structured half. */
+const ENVELOPE_ALLOWANCE = 4096;
+
+/** The API's own ceiling on filter expressions and on the number of filters. */
+const MAX_EXPRESSION_LENGTH = 4096;
+const MAX_FILTERS = 50;
 
 export function registerAnalyticsTools(
   server: McpServer,
@@ -71,6 +82,7 @@ export function registerAnalyticsTools(
           .describe('Last day of the range, inclusive (YYYY-MM-DD)'),
         dimensions: z
           .array(z.enum(DIMENSIONS))
+          .max(DIMENSIONS.length)
           .optional()
           .describe(
             'Group by these, in this order. Omit for a single totals row. ' +
@@ -117,6 +129,7 @@ export function registerAnalyticsTools(
                 .describe('Defaults to EQUALS'),
               expression: z
                 .string()
+                .max(MAX_EXPRESSION_LENGTH)
                 .describe(
                   'The value to match. Comparisons are case-insensitive. ' +
                     'COUNTRY takes a three-letter code such as "deu"; regex ' +
@@ -124,6 +137,7 @@ export function registerAnalyticsTools(
                 ),
             })
           )
+          .max(MAX_FILTERS)
           .optional()
           .describe(
             'Restrict the rows. You do not have to group by a dimension to ' +
@@ -163,10 +177,17 @@ export function registerAnalyticsTools(
         endDate: z.string(),
         rowLimit: z.number().int(),
         startRow: z.number().int(),
-        rowCount: z.number().int(),
+        rowCount: z
+          .number()
+          .int()
+          .describe('How many rows Google returned, shown or not.'),
+        truncated: truncationNote,
         rows: z
           .array(record)
-          .describe('keys[] plus clicks, impressions, ctr and position.'),
+          .describe(
+            'keys[] plus clicks, impressions, ctr and position — the rows the ' +
+              'table shows, which is every row unless truncated says otherwise.'
+          ),
       }),
     },
     (args) =>
@@ -217,38 +238,62 @@ export function registerAnalyticsTools(
           ];
         }
 
-        const response = objectOf(
+        const rows = shapeRows(
           await api.post(
             'search-console',
             `/webmasters/v3/sites/${pathSegment(site)}/searchAnalytics/query`,
             body,
             // A query changes nothing, so a retry after a 429 or a 503 is safe —
-            // and this is the endpoint most likely to meet one.
-            { retryable: true }
-          ),
-          'search analytics response'
-        ) as AnalyticsResponse;
+            // and this is the endpoint most likely to meet one. The response
+            // ceiling is the largest this server reads: the caller chose
+            // row_limit, and this is the one endpoint whose answer grows with it.
+            { retryable: true, maxBytes: MAX_RESPONSE_BYTES }
+          )
+        );
 
         // The rendered table stays in the text block — it is the readable
         // presentation of the same rows — and the rows themselves go in the
         // structured half, where a caller can use them without parsing it.
-        const rendered = renderAnalytics(response, {
+        // The same rows: the structured half is held to the budget by carrying
+        // exactly what the table shows, and the truncation block says how many
+        // there were and how to page to the rest.
+        const { text, shown } = renderAnalytics(
+          { rows },
+          {
+            dimensions: [...dimensions],
+            startDate,
+            endDate,
+            site,
+            rowLimit,
+            startRow,
+          },
+          // The table caps every cell at 200 characters; the JSON rows carry
+          // the page URL and the query whole, so they are measured as sent.
+          (candidate) =>
+            byteLength(JSON.stringify(candidate, null, 2)) <=
+            MAX_RESULT_BYTES - ENVELOPE_ALLOWANCE
+        );
+        return untrustedTextResult(text, {
+          site,
           dimensions: [...dimensions],
           startDate,
           endDate,
-          site,
           rowLimit,
           startRow,
-        });
-        return untrustedTextResult(rendered, {
-          site,
-          dimensions: [...dimensions],
-          startDate,
-          endDate,
-          rowLimit,
-          startRow,
-          rows: response.rows ?? [],
-          rowCount: (response.rows ?? []).length,
+          rowCount: rows.length,
+          ...(shown.length < rows.length
+            ? {
+                truncated: {
+                  shown: shown.length,
+                  total: rows.length,
+                  note:
+                    `${rows.length - shown.length} of ${rows.length} rows were dropped to stay ` +
+                    'inside the result size budget. Narrow the query with a ' +
+                    `dimension filter, or page with start_row=${startRow + shown.length}.`,
+                },
+              }
+            : {}),
+          rows: shown,
         });
       })
   );

@@ -182,6 +182,12 @@ export async function connect(
     client.connect(clientTransport),
     server.connect(serverTransport),
   ]);
+  // Listed once, on purpose. A client that has loaded `tools/list` validates
+  // every `structuredContent` against the tool's output schema and throws a
+  // `ProtocolError` on a mismatch — on the success path only. Without this
+  // call no test here ever ran that check, which is how a closed schema on a
+  // pass-through record stayed green through three hundred tests.
+  await client.listTools();
   return Object.assign(client, { prompts });
 }
 

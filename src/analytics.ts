@@ -1,7 +1,9 @@
+import { cleanText } from './clean.js';
 import { FRESHNESS_NOTE } from './dates.js';
+import { arrayOf, finiteNumberOf, isRecord } from './normalize.js';
 import { byteLength, MAX_RESULT_BYTES } from './result.js';
 
-/** One row of a Search Analytics response. */
+/** One row of a Search Analytics response, as this server promises it. */
 export interface AnalyticsRow {
   keys?: string[];
   clicks?: number;
@@ -13,6 +15,40 @@ export interface AnalyticsRow {
 export interface AnalyticsResponse {
   rows?: AnalyticsRow[];
   responseAggregationType?: string;
+}
+
+/**
+ * Reads the rows out of a Search Analytics response, at the boundary.
+ *
+ * The output schema promises `rows` as a list of records and the SDK holds it
+ * to that; `renderAnalytics` reaches for `.slice` on the list and `.replace` on
+ * every key. Neither survived `rows: {}` or `keys: [12]` — legal JSON, from a
+ * proxy or from a changed API — and each took the whole answer with it. So the
+ * shape is decided here, once: a row that is not an object is dropped, a key
+ * that is not a string is written out as one, a metric that is not a finite
+ * number is left out (the table prints it as 0 and the structured half omits
+ * it, which is what a missing metric already meant).
+ */
+export function shapeRows(body: unknown): AnalyticsRow[] {
+  const raw = isRecord(body) ? body.rows : undefined;
+  return arrayOf(raw).flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const row: AnalyticsRow = {};
+    if (entry.keys !== undefined) {
+      row.keys = arrayOf(entry.keys).map((key) =>
+        typeof key === 'string' ? key : (JSON.stringify(key) ?? 'null')
+      );
+    }
+    const clicks = finiteNumberOf(entry.clicks);
+    const impressions = finiteNumberOf(entry.impressions);
+    const ctr = finiteNumberOf(entry.ctr);
+    const position = finiteNumberOf(entry.position);
+    if (clicks !== undefined) row.clicks = clicks;
+    if (impressions !== undefined) row.impressions = impressions;
+    if (ctr !== undefined) row.ctr = ctr;
+    if (position !== undefined) row.position = position;
+    return [row];
+  });
 }
 
 /** How many rows the table may carry before it is cut. */
@@ -58,8 +94,15 @@ export function renderAnalytics(
     site: string;
     rowLimit: number;
     startRow: number;
-  }
-): string {
+  },
+  /**
+   * Whether a set of rows also fits wherever else it is going. The structured
+   * half of the result carries the same rows as JSON, whose cells are not
+   * capped at {@link MAX_CELL_LENGTH} — so the table fitting says nothing
+   * about the JSON fitting, and the caller measures that half itself.
+   */
+  fits: (shown: AnalyticsRow[]) => boolean = () => true
+): { text: string; shown: AnalyticsRow[] } {
   const rows = response.rows ?? [];
   const header = [
     `Property: ${context.site}`,
@@ -69,7 +112,10 @@ export function renderAnalytics(
   ].join('\n');
 
   if (rows.length === 0) {
-    return `${header}\n\nNo data for this range.\n\n${FRESHNESS_NOTE}`;
+    return {
+      text: `${header}\n\nNo data for this range.\n\n${FRESHNESS_NOTE}`,
+      shown: [],
+    };
   }
 
   const columns = [
@@ -125,13 +171,21 @@ export function renderAnalytics(
   // Halving, like budgetedList: the width of a row is not knowable up front —
   // `page` and `query` values differ by two orders of magnitude between
   // properties — so the only honest way to hit a byte budget is to measure.
+  //
+  // The rows that made it into the table are handed back with it. The
+  // structured half of the result carries exactly those and no more: it used
+  // to carry every row Google returned — 25 000 of them, tens of megabytes
+  // beside a text block that had been carefully halved to a hundred kilobytes.
   let shown = rows.slice(0, MAX_TABLE_ROWS);
   let rendered = render(shown);
-  while (byteLength(rendered) > MAX_RESULT_BYTES && shown.length > 1) {
+  while (
+    (byteLength(rendered) > MAX_RESULT_BYTES || !fits(shown)) &&
+    shown.length > 1
+  ) {
     shown = shown.slice(0, Math.floor(shown.length / 2));
     rendered = render(shown);
   }
-  return rendered;
+  return { text: rendered, shown };
 }
 
 /**
@@ -202,7 +256,7 @@ function sum(
  * bounding at all.
  */
 export function escapeCell(value: string): string {
-  const escaped = value
+  const escaped = cleanText(value)
     .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/[\r\n]+/g, ' ')
@@ -214,6 +268,7 @@ export function escapeCell(value: string): string {
   // number of trailing backslashes leaves only complete escapes behind.
   const cut = escaped
     .slice(0, MAX_CELL_LENGTH)
+    .toWellFormed()
     .replace(/\\+$/, (run) => run.slice(0, run.length - (run.length % 2)));
   return `${cut}…`;
 }

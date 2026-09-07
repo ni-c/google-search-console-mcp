@@ -230,9 +230,9 @@ describe('sanitizeErrorBody', () => {
     expect(sanitizeErrorBody('x'.repeat(5000))).toContain('(truncated)');
   });
 
-  it('passes a normal Google error through', () => {
+  it("passes a normal Google error through, labelled as somebody else's text", () => {
     expect(sanitizeErrorBody('  {"error":"denied"}  ')).toBe(
-      '{"error":"denied"}'
+      '(untrusted text from Google, or from whatever answered in its place): {"error":"denied"}'
     );
   });
 });

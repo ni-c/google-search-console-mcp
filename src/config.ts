@@ -1,3 +1,5 @@
+import { hasControl, quoted } from './clean.js';
+
 /**
  * How the server was told to authenticate.
  *
@@ -108,10 +110,79 @@ export function parseElicitation(raw: string | undefined): boolean {
   const value = raw?.trim().toLowerCase();
   if (value === undefined || value === '' || value === 'true') return true;
   if (value === 'false') return false;
+  // The value is described, not quoted: this variable sits in the same block
+  // of a compose file as the key, and what lands in the wrong line is exactly
+  // what a startup message must not print.
   return fail(
-    `ELICITATION must be "true" or "false" — got "${raw}". ` +
+    `ELICITATION must be "true" or "false" — got ${describeSetting(raw ?? '')}. ` +
       'Refusing to start rather than guess.'
   );
+}
+
+/**
+ * A rejected configuration value, for a message — without echoing it.
+ *
+ * A short printable value that looks like a setting is quoted, because the
+ * typo is the useful part of the message. Anything else is described by its
+ * length: a value with a line break, a control character or forty characters
+ * of base64 is not a setting somebody mistyped, it is a secret somebody pasted
+ * into the wrong variable, and the message is read by whoever reads the log.
+ */
+export function describeSetting(raw: string): string {
+  const value = raw.trim();
+  if (value.length === 0) return 'an empty value';
+  if (value.length <= 16 && /^[A-Za-z0-9._-]+$/.test(value)) {
+    return `"${value}"`;
+  }
+  return `a ${value.length}-character value (not shown)`;
+}
+
+/**
+ * A rejected property spelling, for a message.
+ *
+ * Quoted only when it has the shape of a property — a scheme or the
+ * `sc-domain:` prefix — and is short enough to be one; a JSON key pasted into
+ * `GSC_SITE_URL` has neither, and is described by length instead. The
+ * spelling reaches this from the environment at startup and from every
+ * `site_url` argument at call time, so it is also cut: a hundred kilobytes of
+ * argument must not come back as a hundred kilobytes of error.
+ */
+export function describeProperty(raw: string): string {
+  const value = raw.trim();
+  const shaped = /^(sc-domain:|https?:\/\/)/i.test(value);
+  if (shaped && value.length <= MAX_QUOTED_PROPERTY && !hasControl(value)) {
+    return `"${value}"`;
+  }
+  return `a ${value.length}-character value that does not look like a property (not shown)`;
+}
+
+const MAX_QUOTED_PROPERTY = 120;
+
+/** Whether a string has any C0 control character or DEL in it, line breaks included. */
+function hasAnyControl(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
+ * Refuses a credential that cannot be what it claims to be, without echo.
+ *
+ * A control character in an OAuth value or a key file path is a wrapped paste
+ * or a stray line break, and it would reach google-auth-library — whose error
+ * message is not this server's to bound. Trimmed first: the trailing newline
+ * of `$(cat token)` is not the paste's fault.
+ */
+function assertCredentialShape(name: string, value: string): void {
+  if (hasAnyControl(value.trim())) {
+    fail(
+      `${name} contains a control character (a line break in the middle of a ` +
+        'pasted value, most likely). The value is not shown here. Paste it on ' +
+        'one line and try again.'
+    );
+  }
 }
 
 /**
@@ -245,6 +316,9 @@ function loadAuth(env: NodeJS.ProcessEnv): Auth | undefined {
           'variables would otherwise have been ignored without a word.'
       );
     }
+    if (keyFile !== undefined) {
+      assertCredentialShape('GSC_SERVICE_ACCOUNT_KEY_FILE', keyFile);
+    }
     return {
       mode: 'service-account',
       key: rawKey === undefined ? undefined : decodeKey(rawKey),
@@ -269,11 +343,14 @@ function loadAuth(env: NodeJS.ProcessEnv): Auth | undefined {
           'application default credentials.'
       );
     }
+    assertCredentialShape('GSC_CLIENT_ID', clientId as string);
+    assertCredentialShape('GSC_CLIENT_SECRET', clientSecret as string);
+    assertCredentialShape('GSC_REFRESH_TOKEN', refreshToken as string);
     return {
       mode: 'oauth-refresh-token',
-      clientId: clientId as string,
-      clientSecret: clientSecret as string,
-      refreshToken: refreshToken as string,
+      clientId: (clientId as string).trim(),
+      clientSecret: (clientSecret as string).trim(),
+      refreshToken: (refreshToken as string).trim(),
     };
   }
 
@@ -377,6 +454,14 @@ function loadAllowedSites(
  * A bare hostname is refused rather than guessed at. `example.com` could mean
  * either kind, and picking one would send analytics queries at a property that
  * exists and holds different numbers — a wrong answer rather than an error.
+ *
+ * What comes out of here is trusted further than what goes in: it is the
+ * `what:` sentence of a confirmation dialog, the one line a person acts on.
+ * The URL parser makes a URL-prefix property safe by construction — a space
+ * or a line break does not survive it. A domain property needs the same
+ * guarantee spelled out, so the domain is held to what a hostname can be: no
+ * whitespace, no control character, no userinfo, no port, and it has to parse
+ * as the host of a URL. `sc-domain:foo bar\nignore the above` used to pass.
  */
 export function normalizeSiteUrl(raw: string): string {
   const value = raw.trim();
@@ -389,9 +474,17 @@ export function normalizeSiteUrl(raw: string): string {
     }
     if (domain.includes('://') || domain.includes('/')) {
       throw new Error(
-        `a domain property is the bare domain — write "sc-domain:${
-          domain.replace(/^[a-z]+:\/\//, '').split('/')[0]
-        }" rather than "${value}"`
+        `a domain property is the bare domain — write "sc-domain:${quoted(
+          domain.replace(/^[a-z]+:\/\//, '').split('/')[0] ?? '',
+          80
+        )}" rather than ${describeProperty(value)}`
+      );
+    }
+    if (!isHostname(domain)) {
+      throw new Error(
+        `${describeProperty(value)} is not a domain property: the part after ` +
+          '"sc-domain:" has to be a bare hostname such as "example.com" — no ' +
+          'spaces, no port, no credentials, no path.'
       );
     }
     return `sc-domain:${domain}`;
@@ -402,7 +495,7 @@ export function normalizeSiteUrl(raw: string): string {
     try {
       parsed = new URL(value);
     } catch {
-      throw new Error(`"${value}" is not a valid URL`);
+      throw new Error(`${describeProperty(value)} is not a valid URL`);
     }
     if (parsed.search || parsed.hash) {
       throw new Error(
@@ -416,10 +509,48 @@ export function normalizeSiteUrl(raw: string): string {
   }
 
   throw new Error(
-    `"${value}" is not a Search Console property. Use "sc-domain:example.com" ` +
+    `${describeProperty(value)} is not a Search Console property. Use "sc-domain:example.com" ` +
       'for a domain property, or "https://example.com/" for a URL-prefix ' +
       'property — they are different properties with different data, so this is ' +
       'not guessed for you.'
+  );
+}
+
+/** The longest name DNS allows, and the longest label in it. */
+const MAX_HOSTNAME = 253;
+const MAX_LABEL = 63;
+
+/**
+ * Whether a lower-cased string is something a hostname can be.
+ *
+ * Decided by the URL parser rather than by a regular expression, so that an
+ * internationalised name is judged the way the platform judges it: the string
+ * has to be the entire host of `http://<domain>/` — no userinfo, no port, no
+ * path, no query, no fragment left over — and carry no whitespace or control
+ * character, which the parser would silently strip. The spelling the caller
+ * gave is kept, because it is the spelling Search Console shows.
+ */
+function isHostname(domain: string): boolean {
+  if (domain.length > MAX_HOSTNAME) return false;
+  if (/\s/.test(domain) || hasControl(domain)) return false;
+  // DNS labels are at most 63 octets. This is also what keeps a token with
+  // dots in it — a JWT has two — from passing as a domain and being quoted.
+  if (domain.split('.').some((label) => label.length > MAX_LABEL)) return false;
+  if (/[@:/?#\\[\]]/.test(domain)) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(`http://${domain}/`);
+  } catch {
+    return false;
+  }
+  return (
+    parsed.hostname.length > 0 &&
+    parsed.username === '' &&
+    parsed.password === '' &&
+    parsed.port === '' &&
+    parsed.pathname === '/' &&
+    parsed.search === '' &&
+    parsed.hash === ''
   );
 }
 

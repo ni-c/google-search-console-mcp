@@ -1,6 +1,21 @@
 import { z } from 'zod';
 
+import { quoted } from './clean.js';
 import { normalizeSiteUrl, type Config } from './config.js';
+
+/**
+ * How long a URL argument may be.
+ *
+ * Search Console itself refuses a URL past 2 048 characters in most places,
+ * and a property, a sitemap address or a page to inspect that is longer than
+ * that is not one Google will act on. Without the ceiling a hundred-kilobyte
+ * argument became a hundred-kilobyte request path and a hundred-kilobyte
+ * error message.
+ */
+export const MAX_URL_LENGTH = 2048;
+
+/** A BCP-47 language tag is at most a few subtags; 35 is the RFC's ceiling. */
+const MAX_LANGUAGE_CODE = 35;
 
 /**
  * The `site_url` argument, and the reason it is optional.
@@ -18,6 +33,7 @@ import { normalizeSiteUrl, type Config } from './config.js';
 export function siteUrlSchema(config: Config): z.ZodType<string | undefined> {
   const described = z
     .string()
+    .max(MAX_URL_LENGTH)
     .describe(
       'The Search Console property: "sc-domain:example.com" for a domain ' +
         'property, or "https://example.com/" for a URL-prefix property ' +
@@ -94,7 +110,7 @@ export function assertUrlAllowed(config: Config, url: string): void {
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`"${url}" is not a valid URL`);
+    throw new Error(`"${quoted(url)}" is not a valid URL`);
   }
   const host = parsed.hostname.toLowerCase();
   const target = `${parsed.origin}${parsed.pathname}`;
@@ -110,7 +126,7 @@ export function assertUrlAllowed(config: Config, url: string): void {
 
   if (!covered) {
     throw new Error(
-      `${url} is not inside any property in GSC_ALLOWED_SITES. This server may ` +
+      `${quoted(url)} is not inside any property in GSC_ALLOWED_SITES. This server may ` +
         `only touch: ${allowed.join(', ')}.`
     );
   }
@@ -126,17 +142,31 @@ export function assertUrlAllowed(config: Config, url: string): void {
  * into a puzzling 400 from Google three layers down. `z.url()` alone would let
  * both through — it validates the shape, not the scheme.
  */
-export const webUrl = z.string().refine(
-  (value) => {
-    try {
-      const { protocol } = new URL(value);
-      return protocol === 'http:' || protocol === 'https:';
-    } catch {
-      return false;
-    }
-  },
-  { message: 'must be an absolute http:// or https:// URL' }
-);
+export const webUrl = z
+  .string()
+  .max(MAX_URL_LENGTH)
+  .refine(
+    (value) => {
+      try {
+        const { protocol } = new URL(value);
+        return protocol === 'http:' || protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+    { message: 'must be an absolute http:// or https:// URL' }
+  );
+
+/**
+ * The `language_code` argument of the inspection tools: a BCP-47 tag, which is
+ * letters, digits and hyphens. Anything else is refused before it becomes a
+ * request field.
+ */
+export const languageCode = z
+  .string()
+  .max(MAX_LANGUAGE_CODE)
+  .regex(/^[A-Za-z0-9-]+$/, 'must be a BCP-47 language tag such as "de-CH"')
+  .optional();
 
 /** A `YYYY-MM-DD` date, which is the only format any of these APIs accept. */
 export const isoDate = z
@@ -158,6 +188,7 @@ export const isoDate = z
  */
 export const confirmToken = z
   .string()
+  .max(64)
   .optional()
   .describe(
     "The token from this tool's previous refusal. Call without it first to see " +

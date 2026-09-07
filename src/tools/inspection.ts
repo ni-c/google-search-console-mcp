@@ -2,11 +2,12 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { record, truncationNote, untrustedFields } from '../output-schema.js';
 
-import { GoogleApiError } from '../api.js';
+import { GoogleApiError, MAX_INSPECTION_BYTES } from '../api.js';
 import { READ_ONLY } from './annotations.js';
-import { objectOf } from '../normalize.js';
+import { budgetNote, deadline } from '../deadline.js';
+import { isRecord, objectOf, recordOr } from '../normalize.js';
 import { budgetedList, budgetedUntrustedResult, run } from '../result.js';
-import { resolveSite, siteUrlSchema, webUrl } from '../schema.js';
+import { languageCode, resolveSite, siteUrlSchema, webUrl } from '../schema.js';
 import type { ToolContext } from './context.js';
 
 const INSPECT = '/v1/urlInspection/index:inspect';
@@ -50,13 +51,10 @@ export function registerInspectionTools(
         inspection_url: webUrl.describe(
           'The URL to inspect. It must be inside the property.'
         ),
-        language_code: z
-          .string()
-          .optional()
-          .describe(
-            'BCP-47 code for the language of the issue messages, e.g. "de-CH". ' +
-              'Defaults to en-US. It affects the wording only, never the verdicts.'
-          ),
+        language_code: languageCode.describe(
+          'BCP-47 code for the language of the issue messages, e.g. "de-CH". ' +
+            'Defaults to en-US. It affects the wording only, never the verdicts.'
+        ),
       }),
       annotations: READ_ONLY,
       outputSchema: z
@@ -71,6 +69,9 @@ export function registerInspectionTools(
       run(async () => {
         const site = resolveSite(config, site_url);
         const result = await inspect(api, site, inspection_url, language_code);
+        // The schema promises `inspectionResult` as a record; a value of
+        // another type is dropped rather than refused with the whole answer.
+        if (!isRecord(result.inspectionResult)) delete result.inspectionResult;
         return budgetedUntrustedResult(result);
       })
   );
@@ -94,10 +95,9 @@ export function registerInspectionTools(
           .min(1)
           .max(MAX_BATCH)
           .describe('The URLs to inspect, all inside the same property'),
-        language_code: z
-          .string()
-          .optional()
-          .describe('BCP-47 code for the language of the issue messages'),
+        language_code: languageCode.describe(
+          'BCP-47 code for the language of the issue messages'
+        ),
       }),
       annotations: READ_ONLY,
       outputSchema: z
@@ -113,8 +113,16 @@ export function registerInspectionTools(
       run(async () => {
         const site = resolveSite(config, site_url);
         const results: Record<string, unknown>[] = [];
+        const budget = deadline();
 
-        for (const url of inspection_urls) {
+        for (const [index, url] of inspection_urls.entries()) {
+          // Twenty inspections, each retried up to three times with backoff,
+          // is far more than the per-request timeout bounds. Checked before
+          // each request, never after: a request that was started finishes.
+          if (budget.expired()) {
+            results.push({ note: budgetNote(index, inspection_urls.length) });
+            break;
+          }
           try {
             const result = await inspect(api, site, url, language_code);
             results.push({ url, ...summariseInspection(result) });
@@ -156,18 +164,19 @@ async function inspect(
   api: ToolContext['api'],
   site: string,
   url: string,
-  languageCode: string | undefined
+  language: string | undefined
 ): Promise<Record<string, unknown>> {
   const body: Record<string, unknown> = {
     inspectionUrl: url,
     siteUrl: site,
   };
-  if (languageCode !== undefined) body.languageCode = languageCode;
+  if (language !== undefined) body.languageCode = language;
   // Inspection changes nothing, so retrying a 503 is safe. A 429 is retried too
   // — the backoff may be enough if the minute limit rather than the day limit
   // was hit.
   const response = await api.post('search-console', INSPECT, body, {
     retryable: true,
+    maxBytes: MAX_INSPECTION_BYTES,
   });
   return objectOf(response, 'inspection result');
 }
@@ -184,12 +193,11 @@ async function inspect(
 export function summariseInspection(
   result: Record<string, unknown>
 ): Record<string, unknown> {
-  const status = (result.inspectionResult ?? {}) as Record<string, unknown>;
-  const index = (status.indexStatusResult ?? {}) as Record<string, unknown>;
-  const mobile = (status.mobileUsabilityResult ?? {}) as Record<
-    string,
-    unknown
-  >;
+  // Each level read as a record or as nothing: a string where Google's
+  // discovery document promises an object is a value, not a crash.
+  const status = recordOr(result.inspectionResult);
+  const index = recordOr(status.indexStatusResult);
+  const mobile = recordOr(status.mobileUsabilityResult);
 
   return {
     verdict: index.verdict,

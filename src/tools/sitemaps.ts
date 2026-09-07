@@ -15,8 +15,9 @@ import {
 
 import { GoogleApiError, pathSegment } from '../api.js';
 import { READ_ONLY } from './annotations.js';
+import { budgetNote, deadline } from '../deadline.js';
 import { guarded } from '../guard.js';
-import { listField } from '../normalize.js';
+import { listField, objectOf } from '../normalize.js';
 import { confirmToken, resolveSite, siteUrlSchema, webUrl } from '../schema.js';
 import type { ToolContext } from './context.js';
 
@@ -126,7 +127,10 @@ export function registerSitemapTools(
       run(async () => {
         const site = resolveSite(config, site_url);
         return budgetedUntrustedResult(
-          await api.get('search-console', sitemapsPath(site, feedpath))
+          objectOf(
+            await api.get('search-console', sitemapsPath(site, feedpath)),
+            'sitemap'
+          )
         );
       })
   );
@@ -225,8 +229,21 @@ export function registerSitemapTools(
     ({ site_url, feedpaths }) =>
       run(async () => {
         const site = resolveSite(config, site_url);
-        const results: { feedpath: string; ok: boolean; error?: string }[] = [];
-        for (const feedpath of feedpaths) {
+        const results: {
+          feedpath?: string;
+          ok?: boolean;
+          error?: string;
+          note?: string;
+        }[] = [];
+        const budget = deadline();
+        for (const [index, feedpath] of feedpaths.entries()) {
+          // Fifty PUTs, each retried up to three times with backoff, is far
+          // more than the per-request timeout bounds. Checked before each
+          // request, never after: a request that was started finishes.
+          if (budget.expired()) {
+            results.push({ note: budgetNote(index, feedpaths.length) });
+            break;
+          }
           try {
             await api.put(
               'search-console',
@@ -249,13 +266,14 @@ export function registerSitemapTools(
           }
         }
 
-        const failed = results.filter((entry) => !entry.ok);
+        const attempted = results.filter((entry) => entry.ok !== undefined);
+        const failed = attempted.filter((entry) => !entry.ok);
         return budgetedList('results', results, {
           narrowWith:
             'Split the list and call submit_sitemaps again with fewer URLs.',
           extra: {
             site,
-            submitted: results.length - failed.length,
+            submitted: attempted.length - failed.length,
             failed: failed.length,
             note:
               'Acceptance is not validation — Google fetches each file later. ' +

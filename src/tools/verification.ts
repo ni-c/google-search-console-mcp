@@ -18,6 +18,7 @@ import {
 import {
   allowsSite,
   confirmToken,
+  MAX_URL_LENGTH,
   resolveSite,
   siteUrlSchema,
 } from '../schema.js';
@@ -34,10 +35,21 @@ import { pathSegment } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { normalizeSiteUrl, type Config } from '../config.js';
 import { guarded } from '../guard.js';
-import { listField, objectOf } from '../normalize.js';
+import { listField, objectOf, recordOr, siteBlockOf } from '../normalize.js';
 import type { ToolContext } from './context.js';
 
 const WEB_RESOURCE = '/webResource';
+
+/**
+ * Bounds on the owner list.
+ *
+ * An address is at most 254 characters by the mail RFCs; Google's own limit on
+ * owners per site is not published, and a hundred is more than any site has.
+ * Without a ceiling the confirmation dialog, the resource key and the request
+ * body all grew with whatever the caller sent.
+ */
+const MAX_OWNER_LENGTH = 254;
+const MAX_OWNERS = 100;
 
 export function registerVerificationTools(
   server: McpServer,
@@ -357,8 +369,9 @@ export function registerVerificationTools(
       inputSchema: z.object({
         id: idSchema(),
         owners: z
-          .array(z.string().min(3))
+          .array(z.string().min(3).max(MAX_OWNER_LENGTH))
           .min(1)
+          .max(MAX_OWNERS)
           .describe(
             'The complete list of owner email addresses after the change. ' +
               'Everyone not in it loses ownership.'
@@ -432,7 +445,7 @@ export function registerVerificationTools(
               site: property,
               owners: [...owners],
               previousOwners: listOwners(current),
-              resource: budget(result),
+              resource: budget(recordOr(result)),
             });
           }
         );
@@ -449,9 +462,12 @@ export function registerVerificationTools(
  * one odd entry in an account must not fail a listing of the rest.
  */
 function resourceSiteUrl(resource: Record<string, unknown>): string | null {
-  const site = resource.site as VerificationSite | undefined;
-  if (site === undefined || typeof site.identifier !== 'string') return null;
-  const siteUrl = toSiteUrl(site);
+  // `site: null` is legal JSON and reached `site.identifier` as a TypeError
+  // that took the whole listing down; a block that is not `{type, identifier}`
+  // is simply not a property.
+  const site = siteBlockOf(resource.site);
+  if (site === null) return null;
+  const siteUrl = toSiteUrl(site as VerificationSite);
   if (siteUrl === null) return null;
   try {
     return normalizeSiteUrl(siteUrl);
@@ -510,6 +526,7 @@ function idSchema(): z.ZodType<string> {
   return z
     .string()
     .min(1)
+    .max(MAX_URL_LENGTH)
     .refine((value) => !/^\.+$/.test(value.replaceAll('/', '')), {
       message: 'is not a resource id — a path of dots addresses the collection',
     })
