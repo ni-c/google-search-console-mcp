@@ -184,7 +184,8 @@ afterwards.
 
 Up to 50 sitemaps for one property in a single call, with per-entry results. The
 API has no batch method; this makes the calls one after another and one failure
-does not stop the rest.
+does not stop the rest. The call works under a two-minute budget: when it runs
+out, the result says how many entries were attempted and that the rest were not.
 
 ### `delete_sitemap` 👤 write
 
@@ -233,6 +234,11 @@ The output is a table with a totals line. CTR is total clicks over total
 impressions, and average position is weighted by impressions — an unweighted
 average of that column is not a meaningful number.
 
+The structured half carries the same rows as the table — every row Google
+returned when they fit the 100 kB budget, otherwise the first rows that do, with
+a `truncated` block naming the next `start_row`. `rowCount` is always the number
+Google returned.
+
 ## URL inspection and indexing
 
 ### `inspect_url` ★ read
@@ -253,7 +259,8 @@ not a rate limit you can wait out.
 
 Up to 20 URLs in one call, condensed to the verdict fields. Stops early on a 429,
 because the day's quota being gone means every remaining call would fail
-identically.
+identically — and after two minutes, saying how many were attempted, so an
+outage cannot hold one call for an hour.
 
 Twenty rather than the fifty `submit_sitemaps` allows, precisely because of that
 daily budget.

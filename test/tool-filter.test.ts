@@ -28,17 +28,17 @@ async function registeredNames(
 ): Promise<string[]> {
   const client = await connect(overrides);
   const { tools } = await client.listTools();
-  return tools.map((tool) => tool.name).sort();
+  return tools.map((tool) => tool.name).toSorted();
 }
 
 describe('the catalogue and the server agree', () => {
   it('registers exactly the tools the catalogue declares', async () => {
-    expect(await registeredNames()).toEqual([...ALL_TOOLS].sort());
+    expect(await registeredNames()).toEqual(ALL_TOOLS.toSorted());
   });
 
   it('registers exactly the read tools under GSC_READ_ONLY', async () => {
     expect(await registeredNames({ readOnly: true })).toEqual(
-      [...READ_TOOLS].sort()
+      READ_TOOLS.toSorted()
     );
   });
 
@@ -104,7 +104,7 @@ describe('the catalogue and the server agree', () => {
         return properties?.untrusted === undefined;
       })
       .map((tool) => tool.name)
-      .sort();
+      .toSorted();
     // The six whose answer is a property this server was given and a fact it
     // established. A marker on those would make the marker mean nothing.
     expect(plain).toEqual([
@@ -201,7 +201,7 @@ describe('the essential preset', () => {
 
   it('is what GSC_ALLOW_TOOLS=essential selects', async () => {
     expect(await registeredNames({ allowTools: 'essential' })).toEqual(
-      [...ESSENTIAL_TOOLS].sort()
+      ESSENTIAL_TOOLS.toSorted()
     );
   });
 });

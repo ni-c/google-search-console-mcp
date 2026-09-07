@@ -10,6 +10,7 @@ import {
 
 import { assertUrlAllowed, webUrl } from '../schema.js';
 import { READ_ONLY } from './annotations.js';
+import { isRecord, recordOr } from '../normalize.js';
 import type { ToolContext } from './context.js';
 
 /**
@@ -34,6 +35,21 @@ const OWNERSHIP_NOTE =
   'The credential must be a verified *owner* of the property — Search Console ' +
   'user access is not enough, and the API answers 403 without saying which of ' +
   'the two is missing.';
+
+/**
+ * Holds the three typed fields of a notification metadata record to their
+ * declared types, dropping a field that has another — a `url` that is a
+ * number, a `latestUpdate` that is a string. The rest of the record passes.
+ */
+export function shapeMetadata(
+  metadata: Record<string, unknown>
+): Record<string, unknown> {
+  const shaped = { ...metadata };
+  if (typeof shaped.url !== 'string') delete shaped.url;
+  if (!isRecord(shaped.latestUpdate)) delete shaped.latestUpdate;
+  if (!isRecord(shaped.latestRemove)) delete shaped.latestRemove;
+  return shaped;
+}
 
 /**
  * These two tools are the reason {@link assertUrlAllowed} exists.
@@ -62,22 +78,35 @@ export function registerIndexingTools(
         url: webUrl.describe('The URL to look up the notification history for'),
       }),
       annotations: READ_ONLY,
-      outputSchema: z.object({
-        ...untrustedFields,
-        url: z.string().optional(),
-        notification: record.optional(),
-        latestUpdate: record.optional(),
-        latestRemove: record.optional(),
-        note: z.string().optional(),
-      }),
+      // Google's `UrlNotificationMetadata`, passed through — so open, like
+      // every other record this server hands on. Closed, it made a listing
+      // client refuse the whole answer the day Google added a field. The
+      // three named fields keep their real types, and `shapeMetadata` drops
+      // a field that does not have it rather than letting the schema refuse
+      // the whole answer.
+      outputSchema: z
+        .object({
+          ...untrustedFields,
+          url: z.string().optional(),
+          latestUpdate: record.optional(),
+          latestRemove: record.optional(),
+        })
+        .catchall(z.unknown())
+        .meta({ additionalProperties: true }),
     },
     ({ url }) =>
       run(async () => {
         assertUrlAllowed(config, url);
+        // An empty answer is a URL this credential never notified about,
+        // which is the common case, not a malformed one.
         return budgetedUntrustedResult(
-          await api.get('indexing', '/v3/urlNotifications/metadata', {
-            query: { url },
-          })
+          shapeMetadata(
+            recordOr(
+              await api.get('indexing', '/v3/urlNotifications/metadata', {
+                query: { url },
+              })
+            )
+          )
         );
       })
   );
@@ -139,7 +168,8 @@ export function registerIndexingTools(
           type: type ?? 'URL_UPDATED',
           accepted: true,
           note: 'Accepted is not acted upon. ' + SCOPE_WARNING,
-          notification: budget(result),
+          // Whatever Google answered, as a record; an empty answer is `{}`.
+          notification: budget(recordOr(result)),
         });
       })
   );

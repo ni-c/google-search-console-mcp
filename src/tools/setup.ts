@@ -10,7 +10,7 @@ import { untrustedFields } from '../output-schema.js';
 
 import { GoogleApiError } from '../api.js';
 import { READ_ONLY } from './annotations.js';
-import { listField, objectOf } from '../normalize.js';
+import { listField, objectOf, siteBlockOf } from '../normalize.js';
 import { run, untrustedTextResult } from '../result.js';
 import { resolveSite, siteUrlSchema } from '../schema.js';
 import type { ToolContext } from './context.js';
@@ -247,9 +247,11 @@ async function listOwned(api: ToolContext['api']): Promise<string[]> {
     'items'
   );
   return items.flatMap((item) => {
-    const site = item.site as VerificationSite | undefined;
-    if (site === undefined || typeof site.identifier !== 'string') return [];
-    const siteUrl = toSiteUrl(site);
+    // `site: null`, a string, or an identifier that is not one: not a site
+    // this server can name, and not a reason to fail the rest of the list.
+    const site = siteBlockOf(item.site);
+    if (site === null) return [];
+    const siteUrl = toSiteUrl(site as VerificationSite);
     return siteUrl === null ? [] : [siteUrl];
   });
 }

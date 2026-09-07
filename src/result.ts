@@ -9,6 +9,8 @@ import {
 } from './api.js';
 
 import type { Service } from './auth.js';
+import { cleanText, cleanValue, upstreamText } from './clean.js';
+import { recordOr } from './normalize.js';
 
 /**
  * Ceiling on what one tool result may add to the model's context.
@@ -49,6 +51,10 @@ export function errorResult(text: string): CallToolResult {
  * page titles and crawl diagnostics come from whoever runs the site. Someone
  * who wants a model to act on their instructions can put them in a page title
  * and wait to be crawled.
+ *
+ * The payload passes through {@link cleanValue} on the way: control characters
+ * out, lone surrogates repaired, every key an own property. That is the one
+ * walk every upstream result takes, so it is where the cleaning lives.
  */
 export function untrustedResult(data: Record<string, unknown>): CallToolResult {
   // The marker goes in both channels. A client that reads `structuredContent`
@@ -57,7 +63,11 @@ export function untrustedResult(data: Record<string, unknown>): CallToolResult {
   // title from a crawled site, with no framing at all. The two names are
   // stripped from the payload before they are set, so the guard cannot be
   // switched off by the content it guards against.
-  const { untrusted: _untrusted, source: _source, ...rest } = data;
+  const {
+    untrusted: _untrusted,
+    source: _source,
+    ...rest
+  } = cleanValue(data) as Record<string, unknown>;
   const value = {
     untrusted: true as const,
     source: 'search-console' as const,
@@ -85,14 +95,18 @@ export function untrustedTextResult(
   text: string,
   value: Record<string, unknown>
 ): CallToolResult {
-  const { untrusted: _untrusted, source: _source, ...rest } = value;
+  const {
+    untrusted: _untrusted,
+    source: _source,
+    ...rest
+  } = cleanValue(value) as Record<string, unknown>;
   return {
     content: [
       {
         type: 'text',
         text: `${UNTRUSTED_PREAMBLE}
 
-${text}`,
+${cleanText(text)}`,
       },
     ],
     structuredContent: {
@@ -185,25 +199,14 @@ export function budgetedList(
 /** Strings longer than this are candidates for shortening. */
 const LONG_STRING = 200;
 
-/** The placeholder a shortened array ends with, and how to read its count back. */
-const OMITTED_ENTRIES = /^… \((\d+) more entries omitted\)$/;
-
 /**
- * The mark a shortened *string* carries, and the reason it has to be read back.
- *
- * Load-bearing, not cosmetic. The replacement is the first 200 characters plus
- * this note, which is itself about thirty characters — so shortening a string of
- * 230 characters produces a string of 230 characters, and a shortener that only
- * compares lengths offers the identical value again on the next pass, forever.
- * `budgetedJson` would then spin on a full core and the whole server stops
- * answering, because Node is single-threaded: not just this tool, all of them.
- * Excluding already-marked strings is what lets the loop run out of candidates
- * and reach the honest give-up below.
+ * Roughly what the note a shortened string ends with costs, so a candidate's
+ * saving can be estimated without rendering it.
  */
-const OMITTED_CHARACTERS = /… \(\d+ more characters omitted\)$/;
+const STRING_NOTE_BYTES = 40;
 
 /**
- * Ceiling on how many shrinking rounds {@link budgetedJson} may take.
+ * Ceiling on how many shrinking rounds {@link budget} may take.
  *
  * The loop is supposed to end on its own, and it already failed to do that
  * once — which is the whole argument for a ceiling that does not depend on
@@ -212,52 +215,77 @@ const OMITTED_CHARACTERS = /… \(\d+ more characters omitted\)$/;
  */
 const MAX_SHRINK_ROUNDS = 1000;
 
+/**
+ * What one pass over the structure has already cut, by identity.
+ *
+ * By identity and not by looking at the value, and that is the point. The
+ * shortener used to recognise its own mark by the *suffix* of a string —
+ * `… (N more characters omitted)` — and skipped every value that ended in it,
+ * so a page title or a coverage message that somebody chose to end with those
+ * words was never shortened, the budget could not be met, and the tool answered
+ * an error for that one item. Not a crash: a switch the crawled site could flip
+ * per result. The same for arrays, whose dropped count was read back out of
+ * the marker text and so was whatever the backend had written there.
+ *
+ * Remembering *where* the cut happened, for the duration of one `budget()`
+ * call, removes the value from the decision entirely.
+ */
+interface Marks {
+  strings: Map<object, Set<string>>;
+  arrays: Map<unknown[], number>;
+}
+
 /** Rough serialized size of an array, without serializing all of it. */
 function estimateArrayBytes(value: unknown[]): number {
   const sample = value[0];
   return JSON.stringify(sample ?? '').length * value.length;
 }
 
+interface Candidate {
+  saving: number;
+  shorten: () => void;
+}
+
 /**
- * Finds the largest string or array anywhere in a structure and shortens it.
+ * Finds every string and array worth shortening and cuts the largest of them
+ * until the estimated saving covers the excess.
  *
  * Recursive on purpose, and that is the whole point. A URL inspection result —
- * the case {@link budgetedJson} exists for — keeps every unbounded field under
+ * the case {@link budget} exists for — keeps every unbounded field under
  * `inspectionResult.indexStatusResult`: the referring-URL list, the sitemap
  * list, the rich-results breakdown. A pass over the top level only finds nothing
  * there, gives up on the first iteration, and throws the entire payload away in
  * favour of an error message. Arrays matter as much as strings for the same
  * reason: what makes one of these oversized is a long list, not a long sentence.
  *
- * Each cut is marked in place, and an already-marked array is folded back into a
- * single running count when it is cut again — otherwise the marker itself would
- * make the array look one entry longer every pass and the loop would never
- * finish. An already-marked *string* is skipped entirely rather than folded, for
- * the reason spelled out at {@link OMITTED_CHARACTERS}: shortening it a second
- * time cannot make it shorter.
+ * Several cuts per round rather than one, because each round ends in a full
+ * `JSON.stringify` of the structure to measure it. One cut per round made the
+ * cost *candidates × size*: twenty thousand strings of 250 characters — five
+ * megabytes, well under the response ceiling — took eleven seconds on the
+ * thread that serves every request, and then gave up. Largest first, and the
+ * saving is an estimate, so the measurement afterwards is still what decides.
  *
  * Returns false when nothing is left worth shortening.
  */
-function shortenLargest(node: unknown): boolean {
-  let best: { shorten: () => void; size: number } | undefined;
-  const consider = (size: number, shorten: () => void): void => {
-    if (best === undefined || size > best.size) best = { size, shorten };
-  };
+function shortenBy(node: unknown, excess: number, marks: Marks): boolean {
+  const candidates: Candidate[] = [];
 
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
-      const last = value[value.length - 1];
-      const mark = typeof last === 'string' ? OMITTED_ENTRIES.exec(last) : null;
-      const entries = mark === null ? value : value.slice(0, -1);
+      const dropped = marks.arrays.get(value);
+      const entries = dropped === undefined ? value : value.slice(0, -1);
       if (entries.length > 1) {
-        consider(estimateArrayBytes(entries), () => {
-          const keep = Math.floor(entries.length / 2);
-          const dropped =
-            entries.length - keep + (mark === null ? 0 : Number(mark[1]));
-          const kept = entries.slice(0, keep);
-          kept.push(`… (${dropped} more entries omitted)`);
-          value.length = 0;
-          for (const item of kept) value.push(item);
+        candidates.push({
+          saving: Math.floor(estimateArrayBytes(entries) / 2),
+          shorten: () => {
+            const keep = Math.floor(entries.length / 2);
+            const total = entries.length - keep + (dropped ?? 0);
+            const kept = entries.slice(0, keep);
+            kept.push(`… (${total} more entries omitted)`);
+            value.length = 0;
+            for (const item of kept) value.push(item);
+            marks.arrays.set(value, total);
+          },
         });
       }
       for (const entry of entries) visit(entry);
@@ -265,12 +293,25 @@ function shortenLargest(node: unknown): boolean {
     }
     if (typeof value !== 'object' || value === null) return;
     const record = value as Record<string, unknown>;
+    const done = marks.strings.get(record);
     for (const [key, child] of Object.entries(record)) {
       if (typeof child === 'string') {
-        if (child.length > LONG_STRING && !OMITTED_CHARACTERS.test(child)) {
-          consider(child.length, () => {
-            record[key] =
-              `${child.slice(0, LONG_STRING)}… (${child.length - LONG_STRING} more characters omitted)`;
+        if (child.length > LONG_STRING && !done?.has(key)) {
+          candidates.push({
+            saving: child.length - LONG_STRING - STRING_NOTE_BYTES,
+            shorten: () => {
+              // `defineProperty` rather than assignment: a key of `__proto__`
+              // is an own property here, and it has to stay one.
+              Object.defineProperty(record, key, {
+                value: `${child.slice(0, LONG_STRING).toWellFormed()}… (${child.length - LONG_STRING} more characters omitted)`,
+                writable: true,
+                enumerable: true,
+                configurable: true,
+              });
+              const set = marks.strings.get(record) ?? new Set<string>();
+              set.add(key);
+              marks.strings.set(record, set);
+            },
           });
         }
         continue;
@@ -280,8 +321,14 @@ function shortenLargest(node: unknown): boolean {
   };
 
   visit(node);
-  if (best === undefined) return false;
-  best.shorten();
+  if (candidates.length === 0) return false;
+  candidates.sort((a, b) => b.saving - a.saving);
+  let saved = 0;
+  for (const candidate of candidates) {
+    candidate.shorten();
+    saved += candidate.saving;
+    if (saved >= excess) break;
+  }
   return true;
 }
 
@@ -290,9 +337,9 @@ function shortenLargest(node: unknown): boolean {
  *
  * A URL inspection result is the case that needs it: it is one object, but it
  * carries a referring-URLs list, a sitemaps list and the full rich-results
- * breakdown, none of which is bounded by the input schema. The largest field
- * anywhere in the structure is shortened repeatedly, each cut marked in place,
- * so the shape survives and the reader can see what was lost.
+ * breakdown, none of which is bounded by the input schema. The largest fields
+ * anywhere in the structure are shortened, each cut marked in place, so the
+ * shape survives and the reader can see what was lost.
  */
 export function budgetedJson(data: unknown): string {
   return JSON.stringify(budget(data), null, 2);
@@ -304,19 +351,27 @@ export function budgetedJson(data: unknown): string {
  * Every tool declares an `outputSchema` and answers with `structuredContent`
  * beside the text block, and the two have to carry the same thing — so the
  * shortening happens on the object and the serialization is derived from it.
+ *
+ * Anything that is not an object — an empty 200, which `request()` hands over
+ * as `undefined`, or a primitive where a record was promised — is an empty
+ * record. It used to reach `Buffer.byteLength` as `undefined` and answer the
+ * tool with Node's `ERR_INVALID_ARG_TYPE`.
  */
 export function budget(data: unknown): Record<string, unknown> {
-  let rendered = JSON.stringify(data, null, 2);
+  const base = recordOr(data);
+  let rendered = JSON.stringify(base, null, 2);
   if (byteLength(rendered) <= MAX_RESULT_BYTES) {
-    return data as Record<string, unknown>;
+    return base;
   }
 
-  const copy = structuredClone(data);
+  const copy = structuredClone(base);
+  const marks: Marks = { strings: new Map(), arrays: new Map() };
   for (let round = 0; round < MAX_SHRINK_ROUNDS; round++) {
-    if (!shortenLargest(copy)) break;
+    const excess = byteLength(rendered) - MAX_RESULT_BYTES;
+    if (!shortenBy(copy, excess, marks)) break;
     rendered = JSON.stringify(copy, null, 2);
     if (byteLength(rendered) <= MAX_RESULT_BYTES) {
-      return copy as Record<string, unknown>;
+      return copy;
     }
   }
 
@@ -347,7 +402,17 @@ export function budgetedUntrustedResult(data: unknown): CallToolResult {
   return untrustedResult(budget(data));
 }
 
-const MAX_ERROR_BODY_LENGTH = 2000;
+/**
+ * How much of a message the credential redaction is asked to read.
+ *
+ * The private key in a service account file is under two kilobytes; a message
+ * that carries a hundred kilobytes carries nothing a person needs. Cutting
+ * first also bounds the regular expressions below — an unterminated
+ * `-----BEGIN` block repeated across a long message made the lazy match
+ * quadratic — and cutting is safe only because the patterns then treat the
+ * end of the text as the end of a key.
+ */
+const MAX_REDACTED_MESSAGE = 16_384;
 
 /**
  * Credential shapes, for the one error path this server does not author.
@@ -358,9 +423,13 @@ const MAX_ERROR_BODY_LENGTH = 2000;
  * has leaked a secret; this is so that a future library version cannot make one
  * appear in a tool result, which is the one place it would be read by a model
  * and then possibly written down somewhere else.
+ *
+ * The PEM pattern accepts the end of the text in place of the `END` line: a
+ * key that was cut off — by the ceiling above, or by whoever built the
+ * message — is still the first half of a key.
  */
 const CREDENTIAL_SHAPES: RegExp[] = [
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
   /\bya29\.[A-Za-z0-9._-]{10,}/g,
   /\b1\/\/[A-Za-z0-9._-]{10,}/g,
   /\bGOCSPX-[A-Za-z0-9._-]{10,}/g,
@@ -369,9 +438,13 @@ const CREDENTIAL_SHAPES: RegExp[] = [
 
 /** Replaces anything credential-shaped with a marker. */
 export function redactCredentials(text: string): string {
+  const bounded =
+    text.length > MAX_REDACTED_MESSAGE
+      ? `${text.slice(0, MAX_REDACTED_MESSAGE)}… (truncated)`
+      : text;
   return CREDENTIAL_SHAPES.reduce(
     (value, pattern) => value.replace(pattern, '[redacted credential]'),
-    text
+    bounded
   );
 }
 
@@ -379,20 +452,11 @@ export function redactCredentials(text: string): string {
  * Limits what an upstream error body can inject into the model context.
  *
  * Google's error bodies are JSON, but a proxy or captive portal in front of it
- * answers with an HTML page, which is pure noise here.
+ * answers with an HTML page, which is pure noise here. What survives is
+ * labelled as text somebody else wrote — see {@link upstreamText}.
  */
 export function sanitizeErrorBody(body: string): string {
-  const trimmed = body.trim();
-  // Anything markup-shaped: a reverse proxy's error page or a WAF block page.
-  // The check is deliberately loose — an XML declaration, a leading comment or
-  // a doctype followed by a newline are all the same thing here.
-  if (/^(<!doctype|<html[\s>]|<\?xml|<!--)/i.test(trimmed)) {
-    return '(HTML error page omitted)';
-  }
-  if (trimmed.length > MAX_ERROR_BODY_LENGTH) {
-    return `${trimmed.slice(0, MAX_ERROR_BODY_LENGTH)}… (truncated)`;
-  }
-  return trimmed;
+  return upstreamText(body);
 }
 
 /**
@@ -506,10 +570,12 @@ export async function run(
       return errorResult(`google-search-console-mcp: ${error.message}`);
     }
     // The catch-all, and the only path here whose text this server did not
-    // write — google-auth-library throws through it.
+    // write — google-auth-library throws through it, and so does the runtime
+    // when a header value is refused. Redacted, stripped and bounded, in that
+    // order: the redaction has to see the whole key before anything cuts it.
     const message = error instanceof Error ? error.message : String(error);
     return errorResult(
-      `google-search-console-mcp: ${redactCredentials(message)}`
+      `google-search-console-mcp: ${cleanText(redactCredentials(message))}`
     );
   }
 }

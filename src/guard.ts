@@ -1,30 +1,13 @@
-import { createHash } from 'node:crypto';
 import type {
   CallToolResult,
   InputRequiredResult,
   McpServer,
   ServerContext,
 } from '@modelcontextprotocol/server';
+import { orderedResourceKey } from 'mcp-approval';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 
 import { errorResult } from './result.js';
-
-/**
- * A key binding the token to an ordered tuple of targets.
- *
- * Deliberately **not** `setResourceKey` from mcp-approval, which sorts: the
- * targets here are a tuple, not a set. `delete_sitemap` binds a property and a
- * feedpath in that order, and `update_site_owners` puts the property first and
- * sorts only the owner list after it. Sorting the whole array would fold the
- * property into that run and make two different calls share a key.
- */
-export function tupleResourceKey(operation: string, targets: string[]): string {
-  const fingerprint = createHash('sha256')
-    .update(JSON.stringify(targets))
-    .digest('hex')
-    .slice(0, 16);
-  return `${operation}:${fingerprint}`;
-}
 
 /**
  * Wraps an operation that must not happen on the first call.
@@ -68,7 +51,13 @@ export async function guarded(
   const outcome = await approval.requestApproval(server, ctx, confirmations, {
     what: options.what,
     consequence: options.consequence,
-    resourceKey: tupleResourceKey(options.tool, options.targets),
+    // The targets are a tuple, not a set, so the key comes from
+    // `orderedResourceKey` and deliberately not from `setResourceKey`, which
+    // sorts. `delete_sitemap` binds a property and a feedpath in that order,
+    // and `update_site_owners` puts the property first and sorts only the
+    // owner list after it. Sorting the whole array would fold the property
+    // into that run and make two different calls share a key.
+    resourceKey: orderedResourceKey(options.tool, options.targets),
     token: options.confirmToken,
     toolName: options.tool,
     title: `${options.what[0]?.toUpperCase()}${options.what.slice(1)}?`,

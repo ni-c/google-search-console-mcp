@@ -100,30 +100,80 @@ removes everyone else and nothing here can put them back.
 
 ### What a confirmation proves, and what it does not
 
-A confirmation binds an answer to an operation. It does not prove the answer was
-given just now, and it does not prove it was given only once.
+A confirmation binds an answer to an operation. The sealed request state carries
+the resource key — `orderedResourceKey` from `mcp-approval`, which fingerprints
+the tool name and the exact targets _in order_ — so an answer cannot be moved
+from the question it was given to a different one: a confirmation for
+`delete_site` on one property cannot authorise it on another, and a token issued
+for one sitemap does not remove a different one, or the same pair with the roles
+swapped. The two-call `confirm_token` fallback is bound the same way.
 
-`mcp-approval` seals the state it hands out with an HMAC over the resource key —
-here `tupleResourceKey`, which fingerprints the tool name and the exact targets
-in order. A state that will not open, or opens onto a different operation, counts
-as no answer at all. So a confirmation for `delete_site` on one property cannot
-authorise it on another, and the two-call `confirm_token` fallback is bound the
-same way. What neither carries is a timestamp or a single-use marker: nothing
-here records which confirmations have already been spent, so the same sealed
-state, presented twice, is honoured twice.
+A sealed state also proves **freshness**, since `mcp-approval` 0.8.1: "this
+answer belongs to this question" and "this answer has not been used already" are
+different properties, and the seal alone gives only the first. Each state carries
+a nonce, spent the first time an answer arrives with it — accepted or declined —
+so the same state presented again counts as no answer and produces a fresh
+question. That matters because this server speaks both protocol revisions:
+`serveStdio` in `src/index.ts` negotiates `2025-11-25`, where the SDK bridges the
+dialog inside the same `tools/call` and the state never reaches the caller, and
+`2026-07-28`, where the call returns `input_required` and the client retries
+carrying the state and the answer. On the second the state is an artefact the
+caller holds, and without the nonce it could be presented again for as long as it
+lived. The token fallback is single-use by construction: a matching token is spent
+as it is checked.
 
-That is a gap in the mechanism rather than a hole in this server today, for two
-reasons that both have to hold. The sealed state only travels over the wire on
-protocol revision `2026-07-28`; on `2025-11-25`, the revision clients actually
-speak, the SDK completes the elicitation exchange inside this process and the
-state is never exposed to anything that could keep it. And the signing key is 32
-random bytes per process — a stdio server is spawned per session, so a state
-cannot outlive the session it was issued in even if it were exposed.
+What remains is the shape both records share: they live in the process. A stdio
+server is spawned per session, so that is the flow's lifetime — but a restart
+between the two halves of a dialog forgets what was spent, and a state minted
+before it opens as if unseen, until it expires.
 
-The day a client offers `2026-07-28`, this needs a spent-confirmation record:
-each honoured state noted by its resource key and a nonce carried inside it,
-dropped as it is spent, and expired after a few minutes so an abandoned dialog
-does not accumulate. It is deliberately not built ahead of that day. An unused
-one is a second source of truth about what has been approved, and a replay cache
-written against a protocol revision nobody has spoken yet is a replay cache
-written against a guess.
+The sentence a person reads is built only from values this server derived, and
+"derived" is checked, not assumed: a domain property is held to what a hostname
+can be — no whitespace, no control character, no credentials, no port — before
+it can name the target of a dialog, whether it came from the caller or from a
+verification resource Google returned.
+
+## What Google sends, and what answers in its place
+
+Every request goes to Google, but what answers is whatever sits on the path: a
+corporate proxy that inspects TLS, a captive portal, an outbound filter. The
+code assumes nothing about the shape of a response beyond what it checks:
+
+- **The status is decided before the body is read.** An error body is read under
+  its own small ceiling and cut, never refused, so a `429` or a `503` with a large
+  body is still the status it is — retried where a retry is safe, and explained
+  by the hint for that status. A success body is read under the ceiling for its
+  endpoint: one megabyte for a record, eight for a URL inspection, sixty-four for
+  a search analytics query, whose size the caller chose through `row_limit`.
+- **Every field an output schema types is held to that type at the boundary.** A
+  row that is not an object is dropped, a key that is not a string is written out
+  as one, a metric that is not a finite number is left out, a site block that is
+  `null` is not a site, and an empty `200` is an empty record. None of them takes
+  the listing they appear in down; the schema is never what refuses an answer.
+- **Text is cleaned on the way out.** Control characters are stripped and lone
+  surrogates repaired in both channels, and a key of `__proto__` in Google's JSON
+  stays an own property. Text quoted from an error body is labelled as somebody
+  else's, stripped and cut; a `content-type` header is cut too.
+- **The access token is checked before it becomes a header.** A token the
+  runtime would refuse is reported as no token, never quoted.
+
+## Budgets
+
+A tool result is capped at 100 kB in _each_ channel: list results drop whole
+entries and say how many, a single oversized object has its largest fields
+shortened at any depth, and `query_search_analytics` carries in its structured
+half exactly the rows its table shows, with a `truncated` block naming the next
+`start_row`. The shortener remembers where it cut by identity, not by the shape
+of the value, so a string that happens to end in the shortening note is
+shortened like any other.
+
+Caller strings have ceilings — 2 048 characters for a property, a URL or a
+resource id, 254 for an owner address, 35 for a language tag — and what is
+rejected is described, not echoed. A batch tool (`submit_sitemaps`,
+`inspect_urls`) works under a wall-clock budget of two minutes per call, checked
+before each request, and says how far it got when the budget runs out.
+
+Every diagnostic the server prints describes a rejected configuration value
+rather than quoting it, unless the value is short and shaped like a setting: the
+variables next to the key in a compose file are exactly where a key ends up by
+mistake.

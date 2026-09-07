@@ -23,7 +23,7 @@ import { pathSegment } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { normalizeSiteUrl } from '../config.js';
 import { guarded } from '../guard.js';
-import { listField } from '../normalize.js';
+import { listField, objectOf } from '../normalize.js';
 import type { ToolContext } from './context.js';
 
 /** Where every Search Console property call lives. */
@@ -123,7 +123,10 @@ export function registerSiteTools(
       run(async () => {
         const site = resolveSite(config, site_url);
         return budgetedUntrustedResult(
-          await api.get('search-console', `${SITES}/${pathSegment(site)}`)
+          objectOf(
+            await api.get('search-console', `${SITES}/${pathSegment(site)}`),
+            'property'
+          )
         );
       })
   );

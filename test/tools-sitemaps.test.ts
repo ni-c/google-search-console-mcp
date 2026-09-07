@@ -179,6 +179,46 @@ describe('delete_sitemap', () => {
     expect(stub.calls).toHaveLength(1);
     expect(second.structuredContent).toMatchObject({ removed: true });
   });
+
+  it('binds the token to the positions, not just the pair', async () => {
+    /*
+     * The property and the feedpath are both URLs from the same string space.
+     * A key that sorted its targets — `setResourceKey` — would give
+     * [A, B] and [B, A] the same key, and a token issued for removing B from
+     * property A would then also remove A from property B. The key is
+     * `orderedResourceKey` from mcp-approval, so the swapped call is refused
+     * and, asked without the token, gets a fresh question of its own.
+     */
+    const a = 'https://a.example/';
+    const b = 'https://b.example/';
+    const stub = stubFetch({});
+    const client = await connect();
+
+    const first = await call(client, 'delete_sitemap', {
+      site_url: a,
+      feedpath: b,
+    });
+    const token = tokenOf(first);
+
+    const swapped = await call(client, 'delete_sitemap', {
+      site_url: b,
+      feedpath: a,
+      confirm_token: token,
+    });
+    // Refused, not re-asked: a token that was sent and did not match is an
+    // error without a fresh token in it.
+    expect(swapped.isError).toBe(true);
+    expect(textOf(swapped)).not.toContain('confirm_token=');
+    expect(stub.calls).toHaveLength(0);
+
+    // The swapped pair, asked without a token, is a question of its own.
+    const asked = await call(client, 'delete_sitemap', {
+      site_url: b,
+      feedpath: a,
+    });
+    expect(tokenOf(asked)).not.toBe(token);
+    expect(stub.calls).toHaveLength(0);
+  });
 });
 
 describe('read-only mode', () => {

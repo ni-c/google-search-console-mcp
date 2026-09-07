@@ -1,6 +1,6 @@
 {
   "name": "@ni-c/google-search-console-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "mcpName": "io.github.ni-c/google-search-console-mcp",
   "description": "MCP server for Google Search Console: manage properties and sitemaps, query search analytics, inspect URLs",
   "keywords": [
@@ -54,7 +54,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "google-auth-library": "^11.0.2",
-    "mcp-approval": "^0.8.0",
+    "mcp-approval": "^0.8.2",
     "mcp-tool-allowlist": "^0.2.1",
     "zod": "^4.5.2"
   },

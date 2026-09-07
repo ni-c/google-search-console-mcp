@@ -16,7 +16,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # --ignore-scripts everywhere in this workflow: nothing in the tree needs
+      # an install hook (`npm query ':attr(scripts,[postinstall])'` is empty),
+      # and the publish job below holds an OIDC token while it installs.
+      - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm run build
       - run: npm run test:coverage
@@ -43,7 +46,9 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package.json version $pkg" >&2
             exit 1
           fi
-      - run: npm ci
+      # The one job with `id-token: write`. Every dependency's install hook
+      # used to run here with the token available; none of them needs to.
+      - run: npm ci --ignore-scripts
       # --provenance requires a PUBLIC repository.
       - run: npm publish --provenance
 
@@ -126,5 +131,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md

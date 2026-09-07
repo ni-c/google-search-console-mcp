@@ -92,17 +92,48 @@ decision rather than an omission: no target host is configurable here. Every
 request goes to one of three hard-coded Google endpoints, so there is no
 attacker-controlled destination to guard against.
 
+## What Google sends
+
+Every request goes to one of three Google hosts, but what answers is whatever
+sits on the path — a TLS-inspecting proxy, a captive portal, an outbound filter —
+and Google's own JSON changes. So the response is held to a shape rather than
+trusted:
+
+- The **status is decided before the body is read**. An error body is read under
+  a 64 kB ceiling and cut, never refused, so a `429` or `503` with a large body
+  is still retried and still explained. A success body is read under the ceiling
+  for its endpoint: 1 MB for a record, 8 MB for a URL inspection, 64 MB for a
+  search analytics query, whose size the caller chose.
+- Every field a result promises is **checked at the boundary**: a row that is
+  not an object is dropped, a key that is not a string is written out as one, a
+  metric that is not a finite number is left out, a `null` site block is not a
+  site, an empty `200` is an empty record. One odd entry never takes down the
+  listing it is in, and the output schema is never what refuses an answer.
+- **Control characters are stripped** and lone surrogates repaired in both
+  channels. Text quoted from an error body is labelled as somebody else's, cut
+  and stripped.
+- The **access token is checked** before it becomes a header, so a token the
+  runtime would refuse is reported as no token rather than quoted.
+
 ## Budgets
 
-A tool result is capped at 100 kB. List results drop **whole entries** rather
-than slicing the JSON — a truncated document is not a smaller answer, it is an
-unparseable one — and say how many were dropped and how to narrow the request. A
-single oversized object has its longest text fields shortened, each marked, so
-the structure survives.
+A tool result is capped at 100 kB in **each** channel. List results drop **whole
+entries** rather than slicing the JSON — a truncated document is not a smaller
+answer, it is an unparseable one — and say how many were dropped and how to
+narrow the request. A single oversized object has its largest fields shortened
+at any depth, each marked, so the structure survives. `query_search_analytics`
+carries in its structured half exactly the rows its table shows, with a
+`truncated` block naming the next `start_row`.
 
 The budget counts bytes, not characters. Search queries are the most multilingual
 free text there is, and a character budget would let through three times what it
 promises.
+
+Caller strings have ceilings too — 2 048 characters for a property, a URL or a
+resource id, 254 for an owner address, 35 for a language tag — and a batch call
+(`submit_sitemaps`, `inspect_urls`) works under a two-minute budget checked
+before each request; when it runs out, the result says how many entries were
+attempted and that the rest were not.
 
 ## Reporting a vulnerability
 

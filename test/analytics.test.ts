@@ -59,7 +59,7 @@ describe('the totals line', () => {
 
 describe('rendering the table', () => {
   it('puts the dimension keys in the leading columns', () => {
-    const text = renderAnalytics(
+    const { text } = renderAnalytics(
       {
         rows: [
           {
@@ -83,7 +83,7 @@ describe('rendering the table', () => {
      * splits the row into extra columns and shifts every number after it under
      * the wrong heading — a corrupted table that still looks like a table.
      */
-    const text = renderAnalytics(
+    const { text } = renderAnalytics(
       {
         rows: [
           {
@@ -131,14 +131,14 @@ describe('rendering the table', () => {
       clicks: 1,
       impressions: 1,
     }));
-    const text = renderAnalytics({ rows }, { ...CONTEXT, rowLimit: 3 });
+    const { text } = renderAnalytics({ rows }, { ...CONTEXT, rowLimit: 3 });
     expect(text).toContain('start_row=3');
   });
 
   it('reports an empty result as empty, with the freshness caveat', () => {
     // The most common cause of "no data" is asking for the last two days, which
     // are not final yet.
-    const text = renderAnalytics({}, CONTEXT);
+    const { text } = renderAnalytics({}, CONTEXT);
     expect(text).toContain('No data for this range');
     expect(text).toContain('2 to 3 days');
   });
@@ -163,7 +163,7 @@ describe('rendering the table', () => {
       position: 4.2,
     }));
 
-    const text = renderAnalytics(
+    const { text } = renderAnalytics(
       { rows },
       { ...CONTEXT, dimensions: ['page', 'query'], rowLimit: 25_000 }
     );
@@ -201,7 +201,7 @@ describe('rendering the table', () => {
   });
 
   it('handles a query with no dimensions', () => {
-    const text = renderAnalytics(
+    const { text } = renderAnalytics(
       { rows: [{ clicks: 9, impressions: 10, ctr: 0.9, position: 1.5 }] },
       { ...CONTEXT, dimensions: [] }
     );

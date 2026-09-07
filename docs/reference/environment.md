@@ -28,7 +28,9 @@ gcloud config directory and then the metadata server on every call, and a
 30-second metadata timeout is a far worse answer than "you configured nothing".
 
 `GSC_SERVICE_ACCOUNT_KEY`, `GSC_CLIENT_SECRET` and `GSC_REFRESH_TOKEN` are
-deleted from the environment once read.
+deleted from the environment once read. The OAuth values and the key file path
+are trimmed, and a value with a control character inside it — a wrapped paste —
+is a startup error that names the variable and never the value.
 
 ## Properties
 
@@ -38,9 +40,12 @@ deleted from the environment once read.
 | `GSC_ALLOWED_SITES` | Comma-separated properties this server may touch at all. Anything else is refused before a request goes out |
 
 Both are normalised on read: a URL-prefix property gains its required trailing
-slash, a domain property is lower-cased, and a bare hostname is rejected. A
-`GSC_SITE_URL` that `GSC_ALLOWED_SITES` would then refuse is a startup error —
-valid on both lines and broken as a pair.
+slash, a domain property is lower-cased and has to be a hostname (no spaces, no
+port, no credentials), and a bare hostname is rejected. A `GSC_SITE_URL` that
+`GSC_ALLOWED_SITES` would then refuse is a startup error — valid on both lines
+and broken as a pair. A rejected value is quoted only when it is short and
+shaped like a property; anything else is described by its length, because
+these two lines sit right under the key in every compose file.
 
 ## Tools
 
@@ -76,6 +81,9 @@ Two ways it differs from every other variable on this page:
   one stops the server with exit code 1. It is the only variable here that
   defaults to *on*, and a typo that fell back would leave the dialog running
   while you believed it was off.
+
+A rejected value is quoted only when it is a short typo such as `flase`;
+anything longer is described by its length, never printed.
 
 Values are trimmed and matched case-insensitively. It is read *after* the
 credentials are deleted from `process.env`, so the fatal path cannot leave them

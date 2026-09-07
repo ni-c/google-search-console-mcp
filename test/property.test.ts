@@ -1,9 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { orderedResourceKey } from 'mcp-approval';
 
 import { escapeCell } from '../src/analytics.js';
 import { addDays, PERIODS, resolvePeriod } from '../src/dates.js';
-import { tupleResourceKey } from '../src/guard.js';
 import { toSiteUrl, toVerificationSite } from '../src/site-identity.js';
 
 /**
@@ -224,8 +224,8 @@ describe('a confirmation key depends on the order of its targets', () => {
         fc.stringMatching(/^[a-z0-9.]{1,12}$/),
         (a, b) => {
           fc.pre(a !== b);
-          expect(tupleResourceKey('verify', [a, b])).not.toBe(
-            tupleResourceKey('verify', [b, a])
+          expect(orderedResourceKey('verify', [a, b])).not.toBe(
+            orderedResourceKey('verify', [b, a])
           );
         }
       ),
@@ -241,8 +241,8 @@ describe('a confirmation key depends on the order of its targets', () => {
         fc.stringMatching(/^[a-z_]{3,16}$/),
         (targets, first, second) => {
           fc.pre(first !== second);
-          expect(tupleResourceKey(first, targets)).not.toBe(
-            tupleResourceKey(second, targets)
+          expect(orderedResourceKey(first, targets)).not.toBe(
+            orderedResourceKey(second, targets)
           );
         }
       ),

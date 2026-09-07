@@ -57,20 +57,18 @@ describe('scopesFor', () => {
   });
 });
 
-describe('which scopes a given configuration ends up asking for', () => {
-  function scopesOf(
-    overrides: Parameters<typeof testConfig>[0] = {}
-  ): string[] {
-    const config = testConfig(overrides);
-    return scopesFor(
-      servicesFor(registeredTools(config, toolFilterFor(config))),
-      config.readOnly
-    );
-  }
+function scopesOf(overrides: Parameters<typeof testConfig>[0] = {}): string[] {
+  const config = testConfig(overrides);
+  return scopesFor(
+    servicesFor(registeredTools(config, toolFilterFor(config))),
+    config.readOnly
+  );
+}
 
+describe('which scopes a given configuration ends up asking for', () => {
   it('asks for all three by default', () => {
-    expect(scopesOf().sort()).toEqual(
-      [SCOPES.webmasters, SCOPES.siteVerification, SCOPES.indexing].sort()
+    expect(scopesOf().toSorted()).toEqual(
+      [SCOPES.webmasters, SCOPES.siteVerification, SCOPES.indexing].toSorted()
     );
   });
 
@@ -105,9 +103,9 @@ describe('registeredTools', () => {
 
   it('drops the write tools before the filter is applied', () => {
     const config = testConfig({ readOnly: true });
-    expect([...registeredTools(config, toolFilterFor(config))].sort()).toEqual(
-      [...READ_TOOLS].sort()
-    );
+    expect(
+      [...registeredTools(config, toolFilterFor(config))].toSorted()
+    ).toEqual(READ_TOOLS.toSorted());
   });
 });
 

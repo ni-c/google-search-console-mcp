@@ -1,16 +1,45 @@
 import type { Service, TokenSource } from './auth.js';
+import { quoted } from './clean.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
- * Ceiling on a single upstream response.
+ * Ceiling on the largest upstream response this server ever reads.
  *
  * `searchanalytics.query` is the one that can get large: 25 000 rows with a page
  * and a query dimension is tens of megabytes of JSON, and `rowLimit` is chosen
  * by the caller. This bounds the bytes before they are ever a string in memory;
  * `MAX_RESULT_BYTES` in `result.ts` separately bounds what reaches the model.
+ *
+ * It is the ceiling for that one endpoint, not the default. The default is
+ * {@link MAX_RECORD_BYTES}: a property, a sitemap, a verification resource or a
+ * notification is a record of a few hundred bytes, and reading sixty-four
+ * megabytes of one — from whatever answered in Google's place — is a minute of
+ * the shortener's time on the thread that serves every request.
  */
 export const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+/** The ceiling for every endpoint that answers with one record or a short list. */
+export const MAX_RECORD_BYTES = 1024 * 1024;
+
+/**
+ * The ceiling for a URL inspection: one result, but with a referring-URL list,
+ * a sitemap list and a rich-results breakdown that Google does not bound.
+ */
+export const MAX_INSPECTION_BYTES = 8 * 1024 * 1024;
+
+/**
+ * How much of an error body is kept.
+ *
+ * Google's error bodies are a few hundred bytes of JSON; the body of a 5xx from
+ * a proxy is whatever the proxy felt like sending. It is read under its own
+ * ceiling, and *cut* rather than refused — the status is the answer, and the
+ * body only decorates it.
+ */
+export const MAX_ERROR_BODY_BYTES = 64 * 1024;
+
+/** How much of a request path an error message repeats. */
+const MAX_PATH_IN_MESSAGE = 200;
 
 /** Where each service lives. Fixed — none of this is configurable. */
 const BASE_URL: Record<Service, string> = {
@@ -37,8 +66,11 @@ export class GoogleApiError extends Error {
     method: string,
     public readonly path: string
   ) {
+    // The path carries the property and the feedpath the caller named, so it
+    // is cut: a hundred-kilobyte argument must not become a hundred-kilobyte
+    // error message.
     super(
-      `${SERVICE_NAME[service]} ${method} ${path} failed with HTTP ${status}`
+      `${SERVICE_NAME[service]} ${method} ${quoted(path, MAX_PATH_IN_MESSAGE)} failed with HTTP ${status}`
     );
     this.name = 'GoogleApiError';
   }
@@ -48,10 +80,10 @@ export class GoogleApiError extends Error {
 export class ResponseTooLargeError extends Error {
   constructor(path: string, limit: number) {
     super(
-      `the Google response for ${path} exceeds the ${Math.round(
+      `the Google response for ${quoted(path, MAX_PATH_IN_MESSAGE)} exceeds the ${Math.round(
         limit / 1024 / 1024
-      )} MB ceiling and was not read. Lower row_limit and page through the ` +
-        'result with start_row instead.'
+      )} MB ceiling and was not read. Narrow the request — for an analytics ` +
+        'query, lower row_limit and page through the result with start_row.'
     );
     this.name = 'ResponseTooLargeError';
   }
@@ -67,8 +99,11 @@ export class ResponseTooLargeError extends Error {
  */
 export class UnexpectedContentTypeError extends Error {
   constructor(path: string, contentType: string) {
+    // The header is the answerer's text, so it is shortened like any other.
     super(
-      `Google answered ${path} with "${contentType || 'no content type'}" ` +
+      `Google answered ${quoted(path, MAX_PATH_IN_MESSAGE)} with "${
+        contentType ? quoted(contentType, 80) : 'no content type'
+      }" ` +
         'instead of JSON. Something between this server and Google intercepted ' +
         'the call — a proxy, a captive portal or an outbound filter.'
     );
@@ -79,7 +114,10 @@ export class UnexpectedContentTypeError extends Error {
 export interface RequestOptions {
   /** Query string parameters, undefined entries dropped. */
   query?: Record<string, string | number | boolean | undefined>;
-  /** Overrides {@link MAX_RESPONSE_BYTES} for endpoints with a known small ceiling. */
+  /**
+   * The response ceiling for this call. Defaults to {@link MAX_RECORD_BYTES};
+   * the two endpoints whose answers grow with the request opt up.
+   */
   maxBytes?: number;
   /**
    * Whether the call may be retried after a 429 or a 5xx.
@@ -155,6 +193,12 @@ export class GoogleApi {
     // The token is fetched per attempt, not per client: it expires, and the
     // library refreshes it transparently when it has to.
     const token = await this.tokens.getAccessToken();
+    // Checked before it becomes a header. The runtime refuses a header value
+    // with a control character in it, and its refusal quotes the whole value
+    // — `Headers.append: "Bearer …" is an invalid header value` — which would
+    // travel through the generic error path into the tool result. A token
+    // that fails the check is reported as no token, never as itself.
+    if (!HEADER_VALUE.test(token)) throw new Error(UNUSABLE_TOKEN);
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -176,12 +220,25 @@ export class GoogleApi {
     const url = `${BASE_URL[service]}${path}${queryString(options.query)}`;
     const response = await fetch(url, init);
 
-    const limit = options.maxBytes ?? MAX_RESPONSE_BYTES;
-    const text = await readCapped(response, limit, path);
-
+    // The status is decided before a byte of the body is read. Read the other
+    // way round, a 429 or a 503 with a large enough body was refused for its
+    // size — `ResponseTooLargeError`, which names no status — so the retry
+    // keyed on the status never ran and the hint for the status was never
+    // shown. An error body is read under its own small ceiling and cut, never
+    // refused: the status is the answer, the body decorates it.
     if (!response.ok) {
-      throw new GoogleApiError(response.status, text, service, method, path);
+      const errorBody = await readErrorBody(response);
+      throw new GoogleApiError(
+        response.status,
+        errorBody,
+        service,
+        method,
+        path
+      );
     }
+
+    const limit = options.maxBytes ?? MAX_RECORD_BYTES;
+    const text = await readCapped(response, limit, path);
 
     // Several methods answer 204 with no body: sites.add, sites.delete,
     // sitemaps.submit, sitemaps.delete and siteVerification's delete. There is
@@ -285,6 +342,59 @@ function retryAfterSeconds(body: string): number | undefined {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * What a bearer token may look like: visible ASCII, bounded.
+ *
+ * Google's access tokens are `ya29.` plus a couple of hundred characters; the
+ * band is generous so a future format still passes, and strict about the one
+ * thing that matters — nothing outside 0x21–0x7e, so no control character can
+ * reach the header.
+ */
+const HEADER_VALUE = /^[!-~]{1,4096}$/;
+
+const UNUSABLE_TOKEN =
+  'the credential produced no usable access token. The token endpoint answered, ' +
+  'but what it returned is not something that can be sent as a header — check ' +
+  'the credential rather than the network.';
+
+/**
+ * Reads an error body under its own ceiling, cutting rather than refusing.
+ *
+ * Never throws for the size or the encoding: whatever goes wrong here, the
+ * status that was already read is the answer and the caller gets it.
+ */
+async function readErrorBody(response: Response): Promise<string> {
+  const body = response.body;
+  if (!body) return '';
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let cut = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value === undefined) continue;
+      const room = MAX_ERROR_BODY_BYTES - total;
+      if (value.byteLength > room) {
+        chunks.push(value.subarray(0, room));
+        total += room;
+        cut = true;
+        await reader.cancel();
+        break;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } catch {
+    // A body that fails mid-read is still an error with a status.
+  }
+  const text = Buffer.concat(chunks).toString('utf8');
+  return cut
+    ? `${text}… (error body cut at ${MAX_ERROR_BODY_BYTES} bytes)`
+    : text;
 }
 
 /**
