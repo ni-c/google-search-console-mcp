@@ -325,7 +325,16 @@ a write is impossible even if a tool tried.
 **Credentials never leak into output.** They are deleted from the environment
 after start-up, never sent to a redirect target, and a rejected value is
 described rather than echoed — including when it is a key pasted into
-`GSC_ALLOW_TOOLS` by mistake.
+`GSC_ALLOW_TOOLS`, `GSC_SITE_URL` or `ELICITATION` by mistake, and including the
+access token itself, which is checked before it becomes a header.
+
+**What Google sends is held to a shape.** The status of a response is decided
+before its body is read, every field a result promises is checked at the
+boundary — a row that is not an object is dropped, a `null` site block is not a
+site, an empty `200` is an empty record — and text is stripped of control
+characters on the way out. Results are budgeted in both channels, caller strings
+have ceilings, and a batch call stops after two minutes and says how far it got.
+See [Security](https://google-search-console-mcp.ni-c.de/guide/security).
 
 ## Documentation
 
