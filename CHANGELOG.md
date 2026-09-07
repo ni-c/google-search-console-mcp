@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.3.0] - 2026-09-07
 
 ### Added
 
@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after the fact — this is the channel a model sees before it calls anything.
 - An OpenSSF Scorecard run, weekly and on every push to `main`, reporting into
   the Security tab next to CodeQL and Trivy. The badge is the second in the row.
+
+### Security
+
+- **mcp-approval 0.8.2.** A sealed dialog answer is single-use since 0.8.1: the same `requestState` presented again within its lifetime used to be accepted again, and with a resource key that is the same every time — a whole stream, a fixed set of targets — every replay landed. npm users on `^0.8.0` already had the fix; the Docker image is built from the lockfile and carried 0.8.0 until this release.
+- **Approval keys bound to positions.** `delete_sitemap` binds its token to `[property, feedpath]` and `update_site_owners` to `[property, ...owners]`. This server never sorted those tuples — a local `tupleResourceKey` fingerprinted the targets in the order given, so a token issued for one property and feedpath did not confirm the pair with the roles swapped, which the sorted set key behind `setResourceKey` would have allowed since both are URLs from the same string space — but the decision lived in a hand-written function. The keys now come from `orderedResourceKey` in mcp-approval 0.8.2, which prefixes each part with its position before fingerprinting, and the local copy is gone. The owner list is still sorted by the caller, so the same owners in another order remain one confirmation.
 
 ## [0.2.0] - 2026-09-03
 

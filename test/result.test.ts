@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { orderedResourceKey } from 'mcp-approval';
 
-import { tupleResourceKey } from '../src/guard.js';
 import { listField, objectOf } from '../src/normalize.js';
 import {
   budgetedJson,
@@ -267,25 +267,26 @@ describe('objectOf', () => {
   });
 });
 
-describe('the tuple resource key', () => {
-  // The confirmation store itself lives in mcp-approval and is tested there.
-  // What stays here is the one decision this repository makes differently.
+describe('the resource key the guard builds', () => {
+  // The key and the confirmation store both live in mcp-approval and are
+  // tested there. What stays here pins the one property this repository leans
+  // on: `guarded` uses `orderedResourceKey`, not `setResourceKey`.
 
   it('fingerprints the targets, so one confirmation is not another', () => {
-    expect(tupleResourceKey('op', ['a'])).not.toBe(
-      tupleResourceKey('op', ['a', 'b'])
+    expect(orderedResourceKey('op', ['a'])).not.toBe(
+      orderedResourceKey('op', ['a', 'b'])
     );
   });
 
   it('keeps the order significant, because the targets are a tuple', () => {
-    // This is why `setResourceKey` from mcp-approval is deliberately not used:
-    // it sorts. delete_sitemap binds [property, feedpath] and both are URLs,
-    // drawn from the same string space, so normalising the order would let a
-    // token issued for one pair authorise the pair with the roles swapped. A
-    // caller whose targets really are a set sorts them before passing them in,
-    // which is what update_site_owners does with its owner list.
-    expect(tupleResourceKey('op', ['a', 'b'])).not.toBe(
-      tupleResourceKey('op', ['b', 'a'])
+    // This is why `setResourceKey` is deliberately not used: it sorts.
+    // delete_sitemap binds [property, feedpath] and both are URLs, drawn from
+    // the same string space, so normalising the order would let a token
+    // issued for one pair authorise the pair with the roles swapped. A caller
+    // whose targets really are a set sorts them before passing them in, which
+    // is what update_site_owners does with its owner list.
+    expect(orderedResourceKey('op', ['a', 'b'])).not.toBe(
+      orderedResourceKey('op', ['b', 'a'])
     );
   });
 });
