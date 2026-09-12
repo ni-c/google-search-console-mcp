@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="google-search-console-mcp">
+  <!-- Hand-written, not generated: a favicon has no source that could drift.
+       The indigo is the same #4f46e5 as the theme colour in .vitepress/config.ts,
+       and the mark reads at 16px, which rules out anything finer than this. -->
+  <rect width="32" height="32" rx="7" fill="#4f46e5" />
+  <!-- A performance report under a lens: the Search Analytics query is what the
+       server is mostly asked for, and the rising bar is picked out in the lighter
+       indigo the family uses for the one detail that carries the meaning. -->
+  <g stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <path d="M10.4 17.4v-2.2" />
+    <path d="M14 17.4v-5" />
+  </g>
+  <path d="M17.6 17.4v-8" fill="none" stroke="#a5b4fc" stroke-width="2.2" stroke-linecap="round" />
+  <circle cx="14" cy="13.6" r="8.1" fill="none" stroke="#ffffff" stroke-width="2.4" />
+  <path d="M20 19.6 25.4 25" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+</svg>
