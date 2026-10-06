@@ -62,10 +62,16 @@ export function cleanText(value: string): string {
 /**
  * {@link cleanText} over a whole structure.
  *
- * Rebuilds every object with `Object.fromEntries`, so a key of `__proto__` —
- * an own property after `JSON.parse`, and legal JSON from any backend — stays
- * an own property in the copy instead of becoming its prototype. Keys are
- * cleaned as well as values: a key is text a model reads too.
+ * Rebuilds every object with `Object.fromEntries`. Keys are cleaned as well as
+ * values: a key is text a model reads too.
+ *
+ * A key of `__proto__` — an own property after `JSON.parse`, and legal JSON
+ * from any backend — is dropped. Kept, it reached the text block but not
+ * `structuredContent`: the client parses that against the output schema, and
+ * zod builds its result by assignment, which on that name sets a prototype
+ * instead of a field. The two channels then disagreed about the same answer.
+ * The check runs on the cleaned key, so a control character inside the name
+ * cannot smuggle it past.
  *
  * Numbers, booleans and null pass through; `undefined` and functions cannot
  * come out of JSON and are dropped from objects, where `JSON.stringify` would
@@ -84,10 +90,14 @@ export function cleanValue(value: unknown): unknown {
   if (typeof value === 'object' && value !== null) {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).flatMap(
-        ([key, entry]) =>
-          entry === undefined || typeof entry === 'function'
+        ([key, entry]) => {
+          const name = cleanText(key);
+          return entry === undefined ||
+            typeof entry === 'function' ||
+            name === '__proto__'
             ? []
-            : [[cleanText(key), cleanValue(entry)]]
+            : [[name, cleanValue(entry)]];
+        }
       )
     );
   }
