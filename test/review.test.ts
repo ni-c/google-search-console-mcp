@@ -670,17 +670,40 @@ describe('L8: what leaves the server is clean', () => {
     expect(textOf(result)).not.toContain(ESC);
   });
 
-  it('keeps a __proto__ key an own property and drops nothing else', () => {
+  it('drops a __proto__ key at every depth and nothing else', () => {
     const cleaned = cleanValue(
-      JSON.parse('{"__proto__": "x", "a": [1, "b", null], "n": 1}')
+      JSON.parse(
+        `{"__proto__": "x", "a": [1, "b", null, {"__proto__": {"p": 1}, "q": 2}], "n": 1, "__pro\\u0000to__": false}`
+      )
     ) as Record<string, unknown>;
-    expect(Object.hasOwn(cleaned, '__proto__')).toBe(true);
+    expect(Object.hasOwn(cleaned, '__proto__')).toBe(false);
     expect(Object.getPrototypeOf(cleaned)).toBe(Object.prototype);
     expect(Object.entries(cleaned)).toEqual([
-      ['__proto__', 'x'],
-      ['a', [1, 'b', null]],
+      ['a', [1, 'b', null, { q: 2 }]],
       ['n', 1],
     ]);
+    const nested = (cleaned.a as unknown[])[3] as object;
+    expect(Object.getPrototypeOf(nested)).toBe(Object.prototype);
+    expect(cleanValue({})).toEqual({});
+    expect(cleanValue(JSON.parse('{"__proto__": null}'))).toEqual({});
+  });
+
+  it('answers the same in both channels when upstream sends __proto__', async () => {
+    stubFetch({
+      'GET /v3/urlNotifications/metadata': {
+        text: '{"__proto__": false, "url": "https://example.com/", "latestUpdate": {"__proto__": 1, "type": "URL_UPDATED"}}',
+        contentType: 'application/json',
+      },
+    });
+    const result = await call(await connect(), 'get_indexing_status', {
+      url: 'https://example.com/',
+    });
+    expect(result.isError).toBeFalsy();
+    const text = textOf(result);
+    expect(text).not.toContain('__proto__');
+    expect(JSON.parse(text.slice(text.indexOf('{')))).toEqual(
+      JSON.parse(JSON.stringify(result.structuredContent))
+    );
   });
 
   it('keeps tab, line feed, carriage return and format characters', () => {

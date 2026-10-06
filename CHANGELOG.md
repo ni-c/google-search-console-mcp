@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      last in the file so the link definitions come along. -->
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Fixed
+
+- A `__proto__` key in an answer from Google is dropped, at any depth. It used
+  to reach the text block but not `structuredContent`, because a client parses
+  that against the output schema and zod assigns fields, which on that name sets
+  a prototype instead. The two channels then disagreed about the same answer.
+  The weekly property run found it with a random `get_indexing_status` body.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added
