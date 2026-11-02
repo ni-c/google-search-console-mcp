@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 22 or newer, or Docker
+- Node.js 24 or newer, or Docker
 - A Google Cloud project — free, and you may already have one
 - A property in Search Console, or the ability to edit DNS for a domain you own
 

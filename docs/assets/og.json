@@ -5,5 +5,5 @@
     "Create and verify properties, submit sitemaps,",
     "query search analytics and inspect URLs"
   ],
-  "badges": ["21 tools", "MIT", "Node ≥22"]
+  "badges": ["21 tools", "MIT"]
 }

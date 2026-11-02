@@ -79,7 +79,7 @@ any owned URL while only acting on JobPosting and BroadcastEvent pages.
 
 ## Requirements
 
-- Node.js 22 or newer (or the container image)
+- Node.js 24 or newer (or the container image)
 - A Google credential — a service account key, an OAuth2 refresh token, or
   application default credentials
 - The APIs you intend to use enabled in a Google Cloud project: **Search
