@@ -72,7 +72,7 @@ model reading it will see it, and in a unit test that pins the shape.
 ## Expectations
 
 - **Tests.** Behaviour changes come with a test that fails without the change.
-  CI runs lint, build and the suite on Node 22 and 24, plus npm audit, CodeQL and a Trivy scan of the container image.
+  CI runs lint, build and the suite on Node 24 and 26, plus npm audit, CodeQL and a Trivy scan of the container image.
 - **Comments** explain constraints the code cannot show — not what the next line does.
 - **Security-sensitive areas** (config parsing, confirmation tokens, anything that
   builds a request URL): please describe the attack you are defending against, or the
